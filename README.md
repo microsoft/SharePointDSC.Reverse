@@ -4,7 +4,7 @@ This module allows you to extract the current configuration of any given SharePo
 # Parity with SharePointDSC
 The following Wiki Page describes the parity between SharePointDSC and ReverseDSC by listing the Resources that are currently covered and being extracted.
 
-https://github.com/NikCharlebois/SharePointDSC.Reverse/wiki/Parity-with-SharePointDSC
+https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Parity-with-SharePointDSC
 
 # How does it work?
 Every DSC module contains one to many DSC resources. For example, the SharePointDSC module contains resources for SPWebApplication, SPServiceInstance, SPSite, SPUserProfileServiceApplication, etc.). For a DSC resource to be considered valid, it needs to implement three functions at a minimum. These are: 
@@ -35,7 +35,7 @@ ReverseDSC can be used for many reasons, including:
 # Installation
 1 - On any SharePoint server within an existing 2013 or 2016 farm, install the SharePointDSC module. If the machine has internet connectivity, this is done by running "Install-Module SharePointDSC", otherwise, the module can be manually download from http://github.com/PowerShell/SharePointDSC and copied into the modules folder (e.g. C:\Program files\WindowsPowerShell\Modules).
 
-2 - On that same SharePoint server, download the latest version of the SharePointDSC.Reverse script from here https://github.com/NikCharlebois/SharePointDSC.Reverse/archive/master.zip and put both files (.ps1 and .psm1) in any directory on the server (they both need to be in the same folder). Recommendation is to create a folder under c:\temp and extract both files under that location;
+2 - On that same SharePoint server, download the latest version of the SharePointDSC.Reverse script from here https://github.com/Microsoft/SharePointDSC.Reverse/archive/master.zip and put both files (.ps1 and .psm1) in any directory on the server (they both need to be in the same folder). Recommendation is to create a folder under c:\temp and extract both files under that location;
 
 2a - Since both files have been downloaded from the internet, the recommendation is to turn off the Execution Policy on the server by running "Set-ExecutionPolicy Unrestricted" and by unblocking both files using the "Unblock-File &lt;filename&gt;" command.
 
