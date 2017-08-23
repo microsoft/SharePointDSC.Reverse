@@ -1,10 +1,10 @@
 <#PSScriptInfo
 
-.VERSION 1.8.1.1
+.VERSION 1.9.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
-.AUTHOR Nik Charlebois
+.AUTHOR Microsoft Corporation
 
 .COMPANYNAME Microsoft Corporation
 
@@ -86,7 +86,7 @@ function Orchestrator
     Import-Module -Name $module -Force
 
     $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
-    Save-Credentials $Global:spFarmAccount
+    $catch = Save-Credentials $Global:spFarmAccount
 
     $Global:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
     $spFarm = Get-SPFarm
