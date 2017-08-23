@@ -12,7 +12,7 @@
 
 .TAGS SharePoint,ReverseDSC
 
-.ICONURI https://GitHub.com/NikCharlebois/SharePointDSC.Reverse/blob/master/Images/SharePointDSC.Reverse.png?raw=true
+.ICONURI https://GitHub.com/Microsoft/SharePointDSC.Reverse/blob/master/Images/SharePointDSC.Reverse.png?raw=true
 
 .RELEASENOTES
 
