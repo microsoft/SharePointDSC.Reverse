@@ -6,7 +6,7 @@
 
 .AUTHOR Nik Charlebois
 
-.COMPANYNAME Microsoft
+.COMPANYNAME Microsoft Corporation
 
 .EXTERNALMODULEDEPENDENCIES
 
