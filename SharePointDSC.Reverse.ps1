@@ -47,7 +47,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
-$SPDSCSource = "C:\Program Files\WindowsPowerShell\Modules\SharePointDSC\"
+$SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
 $SPDSCVersion = "1.8.0.0"
 
 try {
@@ -1150,7 +1150,7 @@ function Read-SPServiceInstance ($Servers)
                     Import-Module $module
                     $params = Get-DSCFakeParameters -ModulePath $module
                     $params.Ensure = $ensureValue
-                    $params.FarmAccount = $Global:spFarmAccount            
+                    $params.FarmAccount = $Global:spFarmAccount
                     $results = Get-TargetResource @params
                     if($ensureValue -eq "Present")
                     {            
