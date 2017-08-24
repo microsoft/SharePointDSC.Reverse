@@ -78,7 +78,7 @@ function Orchestrator
     Test-Prerequisites
     $ReverseDSCModule = "ReverseDSC.Core.psm1"
     $module = (Join-Path -Path $PSScriptRoot -ChildPath $ReverseDSCModule -Resolve -ErrorAction SilentlyContinue)
-    if($module -eq $null)
+    if($null -eq $module)
     {
         $module = "ReverseDSC"
     }
