@@ -3134,8 +3134,9 @@ function Get-SPReverseDSC()
         $OutputDSCPath = Read-Host "Please enter the full path of the output folder for DSC Configuration (will be created as necessary)"
     }
     else {
-        $fileName = $OutputFile.Split('/')[$OutputFile.Split('/').Length -1]
-        $OutputDSCPath = $OutputFile.Remove($OutputFile.LastIndexOf('/') + 1, $OutputFile.Length - ($OutputFile.LastIndexOf('/') + 1))
+        	$OutputFile = $OutputFile.Replace("/", "\")
+            $fileName = $OutputFile.Split('\')[$OutputFile.Split('\').Length -1]
+            $OutputDSCPath = $OutputFile.Remove($OutputFile.LastIndexOf('\') + 1, $OutputFile.Length - ($OutputFile.LastIndexOf('\') + 1))
     }
 
     <## Ensures the specified output folder path actually exists; if not, tries to create it and throws an exception if we can't. ##>
