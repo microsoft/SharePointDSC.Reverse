@@ -1,14 +1,15 @@
 version: 1.9.0.{build}
 max_jobs: 1
-image: Visual Studio 2017
+image: WMF 5
 install:
-- ps: >-
-    $ScriptName = 'SharePointDsc.Reverse'
-
+    - git clone https://github.com/PowerShell/DscResource.Tests
+    
+    - npm --silent install
+    
+    - ps: |
+            $ScriptName = 'SharePointDsc.Reverse'
             $mainScriptFolder = "Scripts\$ScriptName"
-
             Import-Module -Name "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
-
             Invoke-AppveyorInstallTask
-build:
-  verbosity: minimal
+            
+build: off
