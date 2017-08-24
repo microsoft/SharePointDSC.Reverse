@@ -1,0 +1,14 @@
+version: 1.9.0.{build}
+max_jobs: 1
+image: Visual Studio 2017
+install:
+- ps: >-
+    $ScriptName = 'SharePointDsc.Reverse'
+
+            $mainScriptFolder = "Scripts\$ScriptName"
+
+            Import-Module -Name "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
+
+            Invoke-AppveyorInstallTask
+build:
+  verbosity: minimal
