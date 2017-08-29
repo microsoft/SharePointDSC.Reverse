@@ -946,6 +946,7 @@ function Read-SPSitesAndWebs (){
                 $resultsWeb = Get-TargetResource @paramsWeb
                 $Script:dscConfigContent += "        SPWeb " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
+                $resultsWeb = Repair-Credentials -results $resultsWeb
                 $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsWeb -ModulePath $moduleWeb
                 $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
                 $Script:dscConfigContent += "        }`r`n"
