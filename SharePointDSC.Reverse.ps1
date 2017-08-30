@@ -1514,6 +1514,7 @@ function Read-ManagedMetadataServiceApplication
                 <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
                 $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
                 $results = Repair-Credentials -results $results
+
                 $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                 $Script:dscConfigContent += "        }`r`n"
             }
@@ -2742,7 +2743,24 @@ function Read-SPFarmPropertyBag
         $results = Get-TargetResource @params
 
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = ""
+        if($results.Key -eq "SystemAccountName")
+        {
+            $accountName = Get-Credentials -UserName $results.Value
+            if($null -eq $accountName)
+            {
+                Save-Credentials -UserName $results.Value
+            }
+            $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
+        }
+        else
+        {
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        }
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"        
     }
 }
