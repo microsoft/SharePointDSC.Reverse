@@ -2040,11 +2040,22 @@ function Get-SPCrawlSchedule($params)
 
 function Get-SPServiceAppSecurityMembers($member)
 {
-    if(!($member.AccessLevel -match "^[\d\.]+$"))
+    try
     {
+        $catch = [System.Guid]::Parse($member.UserName)
+        $isUserGuid = $true
+    }
+    catch{$isUserGuid = $false}
+    if(!($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid))
+    {
+        $userName = Get-Credentials -UserName $member.UserName
+        if($null -eq $userName)
+        {
+            Save-Credentials -UserName $member.UserName            
+        }
         return "MSFT_SPServiceAppSecurityEntry {`
-                                Username    = `"" + $member.UserName + "`";`
-                                AccessLevel = `"" + $member.AccessLevel + "`";`
+            Username    = " + (Resolve-Credentials -UserName $member.UserName) + ".UserName;`
+            AccessLevel = `"" + $member.AccessLevel + "`";`
         }"
     }
     return $null
@@ -3095,47 +3106,74 @@ function Read-SPServiceAppSecurity
         $params.Remove("MembersToInclude")
         $params.Remove("MembersToExclude")
         $results = Get-TargetResource @params
-
-        $Script:dscConfigContent += "        `$members = @();`r`n"
         
         $results = Repair-Credentials -results $results 
         $results.Remove("MembersToInclude")
         $results.Remove("MembersToExclude")
-        $stringMember = ""
-        foreach($member in $results.Members)
-        {
-            $stringMember = Get-SPServiceAppSecurityMembers $member
-            if($stringMember -ne $null)
-            {
-                $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
-            }
-        }
         
-        $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results.Members = "`$members"
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
+        if($results.Members.Count -gt 0)
+        {       
+            $stringMember = ""
+            $foundOne = $false
+            foreach($member in $results.Members)
+            {
+                $stringMember = Get-SPServiceAppSecurityMembers $member
+                if($null -ne $stringMember)
+                {
+                    if(!$foundOne)
+                    {
+                        $Script:dscConfigContent += "        `$members = @();`r`n"
+                        $foundOne = $true
+                    }
+                    $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
+                }
+            }
+
+            if($foundOne)
+            {
+                $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results.Members = "`$members"
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }            
+        }
 
         $params.SecurityType = "Administrators"
         
         $results = Get-TargetResource @params
-        $Script:dscConfigContent += "        `$members = @();`r`n"
+        
         $results = Repair-Credentials -results $results
         $results.Remove("MembersToInclude")
         $results.Remove("MembersToExclude")    
         $stringMember = ""
-        foreach($member in $results.Members)
-        {
-            $stringMember = Get-SPServiceAppSecurityMembers $member
-            $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
-        }
         
-        $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results.Members = "`$members"
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n" 
+        if($results.Members.Count -gt 0)
+        {
+            $foundOne = $false
+            foreach($member in $results.Members)
+            {
+                $stringMember = Get-SPServiceAppSecurityMembers $member
+                if($null -ne $stringMember)
+                {
+                    if(!$foundOne)
+                    {
+                        $Script:dscConfigContent += "        `$members = @();`r`n"
+                        $foundOne = $true
+                    }
+                    $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
+                }
+            }
+
+            if($foundOne)
+            {
+                $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results.Members = "`$members"
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n" 
+            }
+        }
     }
 }
 
