@@ -17,9 +17,10 @@
 .RELEASENOTES
 
 * Fixed issue with UseTLS & SMTPPort for SharePoint 2013;
+* SPWeb Extraction now inserts InstallAccount or PSDSCRunAsCredentials;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.7.3.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.8.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.8.0.0"}
 
 <# 
 
@@ -86,7 +87,7 @@ function Orchestrator
     Import-Module -Name $module -Force
 
     $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
-    $catch = Save-Credentials $Global:spFarmAccount
+    Save-Credentials $Global:spFarmAccount.UserName
 
     $Global:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
     $spFarm = Get-SPFarm
@@ -708,11 +709,21 @@ function Read-SPWebApplications (){
         $params.Name = $spWebApp.Name
         $results = Get-TargetResource @params
         $results = Repair-Credentials -results $results
+
+        $appPoolAccount = Get-Credentials $results.ApplicationPoolAccount
+        if($null -eq $appPoolAccount)
+        {
+            Save-Credentials -UserName $results.ApplicationPoolAccount
+        }
+        $results.ApplicationPoolAccount = (Resolve-Credentials -UserName $results.ApplicationPoolAccount) + ".UserName"
+
         if($null -eq $results.Get_Item("AllowAnonymous"))
         {
             $results.Remove("AllowAnonymous")
         }
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
+        $Script:dscConfigContent += $currentDSCBlock
         $Script:dscConfigContent += "        }`r`n"
         Read-SPDesignerSettings($spWebApplications.Url.ToString(), "WebApplication", $spWebApp.Name.Replace(" ", ""))
 
@@ -825,7 +836,22 @@ function Read-SPServiceApplicationPools
         $params.Name = $spServiceAppPool.Name
         $results = Get-TargetResource @params    
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        $serviceAccount = Get-Credentials $results.ServiceAccount
+        if($null -eq $serviceAccount)
+        {
+            Save-Credentials -UserName $results.ServiceAccount            
+        }        
+        $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
+
+        if($null -eq $results.Get_Item("AllowAnonymous"))
+        {
+            $results.Remove("AllowAnonymous")
+        }
+        $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
+        $Script:dscConfigContent += $currentDSCBlock
+
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -923,7 +949,19 @@ function Read-SPSitesAndWebs (){
         }
         $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+        if($null -ne $ownerAlias)
+        {            
+            $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+        }
+        else
+        {
+            $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        }
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
         $Script:dscConfigContent += "        }`r`n"
 
@@ -1113,7 +1151,17 @@ function Read-SPManagedAccounts (){
         #$results = Get-TargetResource @params
         $results["Account"] = "`$Creds" + ($managedAccount.UserName.Split('\'))[1]
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        $accountName = Get-Credentials -UserName $managedAccount.UserName
+        if($null -eq $accountName)
+        {
+            Save-Credentials -UserName $managedAccount.UserName
+        }        
+        $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
+
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -2007,13 +2055,27 @@ function Get-SPWebPolicyPermissions($params)
     $permission = "MSFT_SPWebPolicyPermissions{`r`n"
     foreach($key in $params.Keys)
     {
-        if($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true")
+        $isCredentials = $false
+        if($key.ToLower() -eq "username")
+        {
+            $memberUserName = Get-Credentials -UserName $params[$key]
+            if($null -eq $memberUserName)
+            {
+                Save-Credentials -UserName $params[$key]                
+            }
+            $isCredentials = $true
+        }
+        if(($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true") -and !$isCredentials)
         {
             $permission += "                " + $key + " = `$" + $params[$key] + "`r`n"
         }
-        else {
+        elseif(!$isCredentials){
             $permission += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
-        }        
+        }
+        else
+        {
+            $permission += "                " + $key + " =  " + (Resolve-Credentials -UserName $params[$key]) + ".UserName`r`n"
+        }
     }
     $permission += "            }"
     return $permission
@@ -2417,8 +2479,78 @@ function Read-SPFarmAdministrators
     $results = Get-TargetResource @params
     $results.Name = "SPFarmAdministrators"
     $results = Repair-Credentials -results $results
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+    $results.Members = Fix-SPFarmAdministrators $results.Members
+    $results.MembersToInclude = Fix-SPFarmAdministrators $results.MembersToInclude
+    $results.MembersToExclude = Fix-SPFarmAdministrators $results.MembersToExclude
+
+    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Clean-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "Members"
+    $currentBlock = Clean-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "MembersToInclude"
+    $currentBlock = Clean-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "MembersToExclude"
+    $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
+}
+
+function Clean-SPFarmAdministratorsBlock($DSCBlock, $ParameterName)
+{
+    $newLine = $ParameterName + " = @("
+    
+    $startPosition = $DSCBlock.IndexOf($ParameterName + " = @")
+    if($startPosition -ge 0)
+    {
+        $endPosition = $DSCBlock.IndexOf("`r`n", $startPosition)
+        if($endPosition -ge 0)
+        {
+            $DSCLine = $DSCBlock.Substring($startPosition, $endPosition - $startPosition)
+            $originalLine = $DSCLine
+            $DSCLine = $DSCLine.Replace($ParameterName + " = @(","").Replace(");","").Replace(" ","")
+            $members = $DSCLine.Split(',')
+            
+            foreach($member in $members)
+            {
+                if($member.StartsWith("`"`$"))
+                {
+                    $newLine += $member.Replace("`"","") + ", "
+                }
+                else
+                {
+                    $newLine += $member + ", "
+                }
+            }
+            if($newLine.EndsWith(", "))
+            {
+                $newLine = $newLine.Remove($newLine.Length - 2, 2)
+            }
+            $newLine += ");"
+            $DSCBlock = $DSCBlock.Replace($originalLine, $newLine)
+        }
+    }
+    
+    return $DSCBlock
+}
+
+function Fix-SPFarmAdministrators($members)
+{
+    $newMemberList = @()
+    foreach($member in $members)
+    {
+        if(!($member.ToUpper() -like "BUILTIN*"))
+        {
+            $memberUser = Get-Credentials -UserName $member
+            if($null -eq $memberUser)
+            {
+                Save-Credentials -UserName $member                
+            }
+            $accountName = Resolve-Credentials -UserName $member
+            $newMemberList += $accountName + ".UserName"
+        }
+        else
+        {
+            $newMemberList += $member
+        }
+    }
+    return $newMemberList
 }
 
 function Read-SPExcelServiceApp
@@ -2891,7 +3023,16 @@ function Read-SPDistributedCacheService
         $Script:dscConfigContent += "        {`r`n"
         $results = Repair-Credentials -results $results
         $results.Remove("ServerProvisionOrder")
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        $serviceAccount = Get-Credentials -UserName $results.ServiceAccount
+        if($null -eq $serviceAccount)
+        {
+            Save-Credentials -UserName $serviceAccount
+        }
+        $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServiceAccount"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -3180,7 +3321,8 @@ function Set-ObtainRequiredCredentials
     $managedAccounts = Get-SPManagedAccount
     foreach($managedAccount in $managedAccounts)
     {
-        $requiredCredentials += $managedAccounts.UserName
+        $requiredCredentials += $managedAccount.Username
+        Save-Credentials -creds $managedAccount.Username
     }
 
     $spServiceAppPools = Get-SPServiceApplicationPool
