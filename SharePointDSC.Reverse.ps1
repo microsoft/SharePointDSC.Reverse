@@ -123,9 +123,7 @@ function Orchestrator
     }
     $Script:dscConfigContent += "Configuration $configName`r`n"
     $Script:dscConfigContent += "{`r`n"
-
-    Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
-    Set-ObtainRequiredCredentials
+    $Script:dscConfigContent += "    <# Credentials #>`r`n"    
 
     Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
     Set-Imports
@@ -379,7 +377,9 @@ function Orchestrator
         }
     }    
     $Script:dscConfigContent += "`r`n}`r`n"
-    
+    Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
+    Set-ObtainRequiredCredentials
+
     $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
 }
 
@@ -2198,7 +2198,7 @@ function Get-SPWebPolicyPermissions($params)
         $isCredentials = $false
         if($key.ToLower() -eq "username")
         {
-            if(!($params[$key].ToUpper -like "NT AUTHORITY*")
+            if(!($params[$key].ToUpper() -like "NT AUTHORITY*"))
             {
                 $memberUserName = Get-Credentials -UserName $params[$key]
                 if($null -eq $memberUserName)
@@ -3528,37 +3528,14 @@ function Get-SPReverseDSC()
 <## This function defines variables of type Credential for the resulting DSC Configuraton Script. Each variable declared in this method will result in the user being prompted to manually input credentials when executing the resulting script. #>
 function Set-ObtainRequiredCredentials
 {
-    # Farm Account
-    $localspFarmAccount = $Global:spCentralAdmin.ApplicationPool.ProcessAccount.Name
-    $requiredCredentials = @($localspFarmAccount)
-    $managedAccounts = Get-SPManagedAccount
-    foreach($managedAccount in $managedAccounts)
+    $credsContent = ""
+    foreach($credential in $Global:CredsRepo)
     {
-        $requiredCredentials += $managedAccount.Username
-        Save-Credentials -creds $managedAccount.Username
+        $credsContent += "    " + (Resolve-Credentials $credential) + " = Get-Credential -UserName `"" + $credential + "`" -Message `"Please provide credentials`"`r`n"
     }
-
-    $spServiceAppPools = Get-SPServiceApplicationPool
-    foreach($spServiceAppPool in $spServiceAppPools)
-    {
-        $requiredCredentials += $spServiceAppPools.ProcessAccount.Name
-    }
-
-    $requiredCredentials = $requiredCredentials | Select-Object -Unique
-
-    foreach($account in $requiredCredentials)
-    {
-        $accountName = $account
-        $accountParts = $accountName.Split('\')
-        if($accountParts.Length -gt 1)
-        {
-            $accountName = $accountParts[1]
-        }
-        
-        $Script:dscConfigContent += "    `$Creds" + $accountName.Replace("-","_").Replace(".", "_") + "= Get-Credential -UserName `"" + $account + "`" -Message `"Credentials for " + $account + "`"`r`n"
-    }
-
-    $Script:dscConfigContent += "`r`n"
+    $credsContent += "`r`n"
+    $startPosition = $Script:dscConfigContent.IndexOf("<# Credentials #>") + 19
+    $Script:dscConfigContent = $Script:dscConfigContent.Insert($startPosition, $credsContent)
 }
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
