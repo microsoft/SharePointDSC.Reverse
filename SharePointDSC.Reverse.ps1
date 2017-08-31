@@ -1548,8 +1548,12 @@ function Read-ManagedMetadataServiceApplication
                 
                 $results.TermStoreAdministrators = Fix-TermStoreAdministratorsBlock $results.TermStoreAdministrators
 
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+                $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
                 $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                 $currentBlock = Clean-TermStoreAdministrators $currentBlock
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
@@ -1638,7 +1642,13 @@ function Read-SPWordAutomationServiceApplication
                 $results.Remove("InstallAccount")
             }
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+            $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
     }    
@@ -1795,7 +1805,14 @@ function Read-SPPerformancePointServiceApplication
                 $results.Remove("InstallAccount")
             }
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+            $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
     }    
@@ -2073,11 +2090,22 @@ function Read-SearchServiceApplication
                 $results.Remove("InstallAccount")
             }
 
+            if($null -eq $results.SearchCenterUrl)
+            {
+                $results.Remove("SearchCenterUrl")
+            }
+
             <# Nik20170111 - Fix a bug in 1.5.0.0 where DatabaseName and DatabaseServer is not properly returned #>
             $results["DatabaseName"] = $searchSAInstance.SearchAdminDatabase.Name
             $results["DatabaseServer"] = $searchSAInstance.SearchAdminDatabase.Server.Name
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+            $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $Script:dscConfigContent += $currentBlock 
             $Script:dscConfigContent += "        }`r`n"
 
             #region Search Content Sources
@@ -2170,12 +2198,15 @@ function Get-SPWebPolicyPermissions($params)
         $isCredentials = $false
         if($key.ToLower() -eq "username")
         {
-            $memberUserName = Get-Credentials -UserName $params[$key]
-            if($null -eq $memberUserName)
+            if(!($params[$key].ToUpper -like "NT AUTHORITY*")
             {
-                Save-Credentials -UserName $params[$key]                
+                $memberUserName = Get-Credentials -UserName $params[$key]
+                if($null -eq $memberUserName)
+                {
+                    Save-Credentials -UserName $params[$key]                
+                }
+                $isCredentials = $true
             }
-            $isCredentials = $true
         }
         if(($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true") -and !$isCredentials)
         {
@@ -2269,7 +2300,13 @@ function Read-SPAccessServiceApp
             $results.Add("DatabaseServer", $dbServer)
         }
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+        $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"  
     }
 }
@@ -3053,7 +3090,13 @@ function Read-SPBlobCacheSettings
             $params.Zone = $alternateUrls[0].Zone
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location
+            $results.Location = "`$NonNodeData.BlobCacheLocation"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         #}
     }
@@ -3108,7 +3151,13 @@ function Read-SPAppManagementServiceApp
         $results.DatabaseName = $appManagement.Databases.Name
         $results.DatabaseServer = $appManagement.Databases.NormalizedDataSource
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+        $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
