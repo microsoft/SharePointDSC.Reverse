@@ -1514,12 +1514,76 @@ function Read-ManagedMetadataServiceApplication
                 <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
                 $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
                 $results = Repair-Credentials -results $results
+                
+                $results.TermStoreAdministrators = Fix-TermStoreAdministratorsBlock $results.TermStoreAdministrators
 
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Clean-TermStoreAdministrators $currentBlock
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
     }
+}
+
+function Clean-TermStoreAdministrators($DSCBlock)
+{
+    $newLine = "TermStoreAdministrators = @("
+    
+    $startPosition = $DSCBlock.IndexOf("TermStoreAdministrators = @")
+    if($startPosition -ge 0)
+    {
+        $endPosition = $DSCBlock.IndexOf("`r`n", $startPosition)
+        if($endPosition -ge 0)
+        {
+            $DSCLine = $DSCBlock.Substring($startPosition, $endPosition - $startPosition)
+            $originalLine = $DSCLine
+            $DSCLine = $DSCLine.Replace("TermStoreAdministrators = @(","").Replace(");","").Replace(" ","")
+            $members = $DSCLine.Split(',')
+            
+            foreach($member in $members)
+            {
+                if($member.StartsWith("`"`$"))
+                {
+                    $newLine += $member.Replace("`"","") + ", "
+                }
+                else
+                {
+                    $newLine += $member + ", "
+                }
+            }
+            if($newLine.EndsWith(", "))
+            {
+                $newLine = $newLine.Remove($newLine.Length - 2, 2)
+            }
+            $newLine += ");"
+            $DSCBlock = $DSCBlock.Replace($originalLine, $newLine)
+        }
+    }
+    
+    return $DSCBlock
+}
+
+function Fix-TermStoreAdministratorsBlock($TermStoreAdminsLine)
+{
+    $newArray = @()
+    foreach($admin in $TermStoreAdminsLine)
+    {
+        if(!($admin -like "BUILTIN*"))
+        {
+            $account = Get-Credentials -UserName $admin
+            if($null -eq $account)
+            {
+                Save-Credentials -UserName $admin
+            }
+            $newArray += (Resolve-Credentials -UserName $admin) + ".UserName"
+        }
+        else
+        {
+            $newArray += $admin
+        }
+    }
+    return $newArray
 }
 
 function Read-SPWordAutomationServiceApplication
