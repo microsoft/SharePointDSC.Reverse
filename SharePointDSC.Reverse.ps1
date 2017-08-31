@@ -48,6 +48,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
+$Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
 $SPDSCVersion = "1.8.0.0"
 
@@ -135,6 +136,8 @@ function Orchestrator
     $serverNumber = 1
     foreach($spServer in $spServers)
     {
+        $Script:currentServerName = $spServer.Name
+        Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
@@ -376,10 +379,8 @@ function Orchestrator
         }
     }    
     $Script:dscConfigContent += "`r`n}`r`n"
-    Write-Host "["$spServer.Name"] Setting Configuration Data..." -BackgroundColor DarkGreen -ForegroundColor White
-    Set-ConfigurationData
-
-    $Script:dscConfigContent += "$configName -ConfigurationData `$ConfigData"
+    
+    $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
 }
 
 function Test-Prerequisites
@@ -513,43 +514,6 @@ function Set-VariableSection
     $Script:dscConfigContent += "    `$Script:passphrase = Read-Host `"Farm Passphrase`" -AsSecureString;`r`n"
 }
 
-function Set-ConfigurationData
-{
-    $Script:dscConfigContent += "`$ConfigData = @{`r`n"
-    $Script:dscConfigContent += "    AllNodes = @(`r`n"
-
-    $spFarm = Get-SPFarm
-    $spServers = $spFarm.Servers
-
-    $tempConfigDataContent = ""
-
-    if($Standalone)
-    {
-        $i = 0;
-        foreach($spServer in $spServers)
-        {
-            if($i -eq 0)
-            {
-                $spServers = @($spServer)
-            }
-            $i++
-        }        
-    }
-
-    foreach($spServer in $spServers)
-    {
-        $tempConfigDataContent += "    @{`r`n"
-        $tempConfigDataContent += "        NodeName = `"" + $spServer.Name + "`";`r`n"
-        $tempConfigDataContent += "        PSDscAllowPlainTextPassword = `$true;`r`n"
-        $tempConfigDataContent += "        PSDscAllowDomainUser = `$true;`r`n"
-        $tempConfigDataContent += "    },`r`n"
-    }
-
-    # Remove the last ',' in the array
-    $tempConfigDataContent = $tempConfigDataContent.Remove($tempConfigDataContent.LastIndexOf(","), 1)
-    $Script:dscConfigContent += $tempConfigDataContent
-    $Script:dscConfigContent += ")}`r`n"
-}
 
 <## This function ensures all required DSC Modules are properly loaded into the current PowerShell session. #>
 function Set-Imports
@@ -632,7 +596,8 @@ function Read-SPFarm (){
 
     <# WA - Bug in 1.6.0.0 Get-TargetResource not returning name if aliases are used #>
     $configDB = Get-SPDatabase | Where-Object{$_.Type -eq "Configuration Database"}
-    $results.DatabaseServer = $configDB.NormalizedDataSource
+    $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource
 
     $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', `$passphrase);`r`n"
     
@@ -650,7 +615,9 @@ function Read-SPFarm (){
         $results.Add("ServerRole", $currentServer.Role)
     }
     $results = Repair-Credentials -results $results
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+    $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
 
     <# SPFarm Feature Section #>
@@ -721,8 +688,13 @@ function Read-SPWebApplications (){
         {
             $results.Remove("AllowAnonymous")
         }
+
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+        $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+        
         $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
         $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "DatabaseServer"
         $Script:dscConfigContent += $currentDSCBlock
         $Script:dscConfigContent += "        }`r`n"
         Read-SPDesignerSettings($spWebApplications.Url.ToString(), "WebApplication", $spWebApp.Name.Replace(" ", ""))
@@ -1257,7 +1229,13 @@ function Read-DiagnosticLoggingSettings{
     $Script:dscConfigContent += "        {`r`n"
     $results = Get-TargetResource @params
     $results = Repair-Credentials -results $results
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "LogPath" -Value $results.LogPath
+    $results.LogPath = "`$NonNodeData.LogPath"
+
+    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LogPath"
+    $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
 }
 
@@ -1319,13 +1297,32 @@ function Read-SPUsageServiceApplication{
         $params.Ensure = "Present"
         $results = Get-TargetResource @params
         $results.DatabaseCredentials = $Global:spFarmAccount
-        if($results.Get_Item("FailOverDatabaseServer") -eq "")
+        $failOverFound = $false
+
+        $results = Repair-Credentials -results $results
+        if($null -eq $results.FailOverDatabaseServer)
         {
             $results.Remove("FailOverDatabaseServer")
         }
-        $results = Repair-Credentials -results $results
+        else
+        {
+            $failOverFound = $true
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageAppFailOverDatabaseServer" -Value $results.FailOverDatabaseServer
+            $results.FailOverDatabaseServer = "`$NonNodeData.UsageAppFailOverDatabaseServer"
+        }
+        
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageLogLocation" -Value $results.UsageLogLocation
+        $results.UsageLogLocation = "`$NonNodeData.UsageLogLocation"
 
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "UsageLogLocation"
+
+        if($failOverFound)
+        {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FailOverDatabaseServer"
+        }
+
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -1447,8 +1444,22 @@ function Read-UserProfileServiceapplication ($modulePath, $params){
                 {
                     $results.Remove("InstallAccount")
                 }
-				$results = Repair-Credentials -results $results
-				$Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $results = Repair-Credentials -results $results
+                
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SyncDBServer" -Value $results.SyncDBServer
+                $results.SyncDBServer = "`$NonNodeData.SyncDBServer"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "ProfileDBServer" -Value $results.ProfileDBServer
+                $results.ProfileDBServer = "`$NonNodeData.ProfileDBServer"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer
+                $results.SocialDBServer = "`$NonNodeData.SocialDBServer"
+
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SocialDBServer"
+                $Script:dscConfigContent += $currentBlock
 				$Script:dscConfigContent += "        }`r`n"
 			}
         }
@@ -1484,13 +1495,30 @@ function Read-SecureStoreServiceApplication
             $results.Remove("InstallAccount")
         }
 
-        if($results.Get_Item("FailOverDatabaseServer") -eq "")
+        $results = Repair-Credentials -results $results
+
+        $foundFailOver = $false
+        if($null -eq $results.FailOverDatabaseServer)
         {
             $results.Remove("FailOverDatabaseServer")
         }
+        else
+        {
+            $foundFailOver = $true
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SecureStoreFailOverDatabaseServer" -Value $results.FailOverDatabaseServer
+            $results.FailOverDatabaseServer = "`$NonNodeData.SecureStoreFailOverDatabaseServer"
+        }
 
-		$results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+        $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+		
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+        if($foundFailOver)
+        {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FailOverDatabaseServer"
+        }
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"        
     }
 }
@@ -1997,7 +2025,12 @@ function Read-BCSServiceApplication ($modulePath, $params){
                 $results.Remove("InstallAccount")
             }
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+            $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"        
         }
     }
@@ -2203,7 +2236,13 @@ function Read-SPContentDatabase
         $params.WebAppUrl = $spContentDB.WebApplication.Url
         $results = Get-TargetResource @params
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer
+        $results.DatabaseServer = "`$NonNodeData.DatabaseServer"        
+
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"  
     }
 }
@@ -3428,10 +3467,12 @@ function Get-SPReverseDSC()
 
     <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>
     $outputDSCFile = $OutputDSCPath + $fileName
+    $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
     $Script:dscConfigContent | Out-File $outputDSCFile
-    Write-Output "Done."
-    <## Wait a couple of seconds, then open our $outputDSCPath in Windows Explorer so we can review the glorious output. ##>
-    Start-Sleep 2
+    New-ConfigurationDataDocument -Path $outputConfigurationData
+    
+    <## Wait a second, then open our $outputDSCPath in Windows Explorer so we can review the glorious output. ##>
+    Start-Sleep 1
     Invoke-Item -Path $OutputDSCPath
 }
 
