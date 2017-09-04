@@ -3555,11 +3555,20 @@ function Get-SPReverseDSC()
     Orchestrator
 
     <## Prompts the user to specify the FOLDER path where the resulting PowerShell DSC Configuration Script will be saved. #>
-    $fileName = "SP-Farm.DSC.ps1"
+    $fileName = "SP-Farm.DSC"
     if($Standalone)
     {
-        $fileName = "SP-Standalone.ps1"
+        $fileName = "SP-Standalone"
     }
+    if($Script:ExtractionModeValue -eq 3)
+    {
+        $fileName += "-Full"
+    }
+    elseif($Script:ExtractionModeValue -eq 1)
+    {
+        $fileName += "-Lite"
+    }
+    $fileName += ".ps1"
     if($OutputFile -eq "")
     {
         $OutputDSCPath = Read-Host "Please enter the full path of the output folder for DSC Configuration (will be created as necessary)"
