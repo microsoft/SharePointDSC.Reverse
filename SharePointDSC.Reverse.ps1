@@ -1537,7 +1537,7 @@ function Read-UserProfileServiceapplication ($modulePath, $params){
                 $results = Repair-Credentials -results $results
                 
                 Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SyncDBServer" -Value $results.SyncDBServer
-                $results.SyncDBServer = "`$AllNodes.Where{`$Null -ne `$_.SyncDBServer'}.SyncDBServer"
+                $results.SyncDBServer = "`$AllNodes.Where{`$Null -ne `$_.SyncDBServer}.SyncDBServer"
 
                 Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ProfileDBServer" -Value $results.ProfileDBServer
                 $results.ProfileDBServer = "`$AllNodes.Where{`$Null -ne `$_.ProfileDBServer}.ProfileDBServer"
