@@ -119,9 +119,6 @@ function Orchestrator
     Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
     Set-Imports
 
-    Write-Host "Configuring Variables..." -BackgroundColor DarkGreen -ForegroundColor White
-    Set-VariableSection
-
     $serverNumber = 1
     foreach($spServer in $spServers)
     {
@@ -547,16 +544,11 @@ function Read-SQLVersion
                 $Script:dscConfigContent += "<#`r`n    SQL Server Product Versions Installed on this Farm`r`n-------------------------------------------`r`n"
                 $Script:dscConfigContent += "    Products and Language Packs`r`n"
                 $Script:dscConfigContent += "-------------------------------------------`r`n"
-                $Script:dscConfigContent += "    [" + $serverName + "]: " + $sqlVersionInfo.SQLversion.Split("`n")[0] + "`r`n#>`r`n`r`n"
+                $Script:dscConfigContent += "    [" + $serverName.ToUpper() + "]: " + $sqlVersionInfo.SQLversion.Split("`n")[0] + "`r`n#>`r`n`r`n"
             }
             catch{}
         }
     }
-}
-
-function Set-VariableSection
-{
-    $Script:dscConfigContent += "    `$Script:passphrase = Read-Host `"Farm Passphrase`" -AsSecureString;`r`n"
 }
 
 
@@ -650,7 +642,8 @@ function Read-SPFarm (){
     $results.DatabaseServer = "`$NonNodeData.DatabaseServer"
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource
 
-    $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', `$passphrase);`r`n"
+    Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "PassPhrase" -Value "pass@word1"
+    $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$AllNodes.Where{`$_.NodeName -eq '" + $Script:currentServerName + "'}.PassPhrase -AsPlainText -Force));`r`n"
     
     $currentServer = Get-SPServer $ServerName
     $centralAdminStatus = Get-SPServiceInstance -Server $currentServer | Where-Object{$_.TypeName -eq "Central Administration"}
