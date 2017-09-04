@@ -2679,12 +2679,9 @@ function Read-SPFarmSolution
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $solutions = Get-SPSolution
-    $farm = Get-SPFarm
+    
     foreach($solution in $solutions)
-    {
-        $file = $farm.Solutions.Item($solution.Name).SolutionFile
-        $filePath = (Get-Item -Path ".\" -Verbose).FullName + "\" + $solution.Name
-        $file.SaveAs($filePath)
+    {        
         $Script:dscConfigContent += "        SPFarmSolution " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $params.Name = $solution.Name
@@ -2693,10 +2690,29 @@ function Read-SPFarmSolution
         {
             $results.Remove("ContainsGlobalAssembly")
         }
+        $filePath = "`$NonNodeData.SPSolutionPath+###" + $solution.Name + "###"
         $results["LiteralPath"] = $filePath
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentblock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LiteralPath"
+        $currentBlock = $currentBlock.Replace("###", "`"")
+        $Script:dscConfigContent += $currentBlock
+
         $Script:dscConfigContent += "        }`r`n"
+    }
+}
+
+function Save-SPFarmsolution($Path)
+{
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPSolutionPath" -Value $Path
+    $solutions = Get-SPSolution
+    $farm = Get-SPFarm
+    foreach($solution in $solutions)
+    {   
+        $file = $farm.Solutions.Item($solution.Name).SolutionFile
+        $filePath = $Path + $solution.Name
+        $file.SaveAs($filePath)
     }
 }
 
@@ -3600,6 +3616,9 @@ function Get-SPReverseDSC()
     {
         $OutputDSCPath += "\"
     }
+
+    <# Now that we have acquired the output path, save all custom solutions (.wsp) in that directory; #>
+    Save-SPFarmsolution($OutputDSCPath)
 
     <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>
     $outputDSCFile = $OutputDSCPath + $fileName
