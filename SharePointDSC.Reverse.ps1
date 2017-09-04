@@ -128,7 +128,7 @@ function Orchestrator
         if($spServer.Role -ne "Invalid")
         {
             Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber
-            $Script:dscConfigContent += "`r`n    node " + $spServer.Name + "`r`n    {`r`n"
+            $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '" + $serverNumber.ToString() + "'}.NodeName`r`n    {`r`n"
             
             Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
             Read-SPFarm -ServerName $spServer.Address
