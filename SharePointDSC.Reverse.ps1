@@ -20,6 +20,7 @@
 * SPWeb Extraction now inserts InstallAccount or PSDSCRunAsCredentials;
 * Exposes variables in a .PSD1 ConfigurationData file;
 * Introduced support to extract Machine Translation Service Application;
+* Fixed issue with Availability Groups not being properly identified and throwing error in script;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.8.0.0"}
@@ -828,22 +829,26 @@ function Read-SPWebApplications (){
 
 function Repair-Credentials($results)
 {
-    <## Cleanup the InstallAccount param first (even if we may be adding it back) #>
-    if($null -ne $results.ContainsKey("InstallAccount"))
+    if($null -ne $results)
     {
-        $results.Remove("InstallAccount")        
-    }
+        <## Cleanup the InstallAccount param first (even if we may be adding it back) #>
+        if($null -ne $results.ContainsKey("InstallAccount"))
+        {
+            $results.Remove("InstallAccount")        
+        }
 
-    if($null -ne $results.ContainsKey("PsDscRunAsCredential"))
-    {
-        $results.Remove("PsDscRunAsCredential")        
-    }
+        if($null -ne $results.ContainsKey("PsDscRunAsCredential"))
+        {
+            $results.Remove("PsDscRunAsCredential")        
+        }
 
-    if($PSVersionTable.PSVersion.Major -ge 5)
-    {
-        $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_"))
+        if($PSVersionTable.PSVersion.Major -ge 5)
+        {
+            $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_"))
+        }
+        return $results
     }
-    return $results
+    return $null
 }
 
 <## This function loops through every IIS Application Pool that are associated with the various existing Service Applications in the SharePoint farm. ##>
@@ -2889,9 +2894,9 @@ function Read-SPDatabaseAAG
             $Script:dscConfigContent += "        SPDatabaseAAG " + [System.Guid]::NewGuid().ToString() + "`r`n"
             $Script:dscConfigContent += "        {`r`n"
             $params.DatabaseName = $database.Name
-            $params.AGName = $configDatabase.AvailabilityGroup
-            $results = Repair-Credentials -results $results
+            $params.AGName = $database.AvailabilityGroup            
             $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
             $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             $Script:dscConfigContent += "        }`r`n"
         }
@@ -3375,7 +3380,7 @@ function Read-SPServiceAppSecurity
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPServiceAppSecurity\MSFT_SPServiceAppSecurity.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $serviceApplications = Get-SPServiceApplication | Where-Object {$_.TypeName -ne "Usage and Health Data Collection Service Application"}
+    $serviceApplications = Get-SPServiceApplication | Where-Object {$_.TypeName -ne "Usage and Health Data Collection Service Application" -and $_.TypeName -ne "State Service"}
 
     foreach($serviceApp in $serviceApplications)
     {
