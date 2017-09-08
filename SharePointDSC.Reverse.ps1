@@ -993,7 +993,7 @@ function Read-SPSitesAndWebs (){
             }
             else
             {
-                $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             }
             if($results.ContainsKey("SecondaryOwnerAlias"))
             {
