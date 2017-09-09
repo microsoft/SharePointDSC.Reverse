@@ -2,7 +2,7 @@
 This module allows you to extract the current configuration of any given SharePoint 2013 or 2016 farm as a PowerShell Desired State Configuration (DSC) .ps1 script along with its associated .psd1 Configuration Data File. With these files you can then recreate an exact copy of your SharePoint Farm in another environment (cloud or on-premises).
 
 # Installation
-The ReverseDSC Orchestrator for SharePoint only needs to be put on one server in the farm (recommended to be put on a Web-Front-End). If your machine has internet connectivity, it can be automatically install using PowerShell 5 and above using the "Install-Script SharePointDSC.Reverse" command. This will automatically install the orchestrator and all the modules it depends on.
+The ReverseDSC Orchestrator for SharePoint only needs to be put on one server in the farm (recommended to be put on a Web-Front-End). If your machine has internet connectivity, it can be automatically installed using PowerShell 5 and above using the "Install-Script SharePointDSC.Reverse" command. This will automatically install the orchestrator and all the modules it depends on.
 
 If the server doesn't have internet connectivity, then you will need to run the "Install-Script SharePointDSC.Reverse" command from a computer that has PowerShell version 5 or greater and that had internet connectivity and copy the files manually over the server. Once the command has been run on the machine with internet connectivity, copy the following files to the exact same location on the SharePoint server:
 * C:\Program Files\WindowsPowerShell\Modules\SharePointDSC  [Entire Folder]
