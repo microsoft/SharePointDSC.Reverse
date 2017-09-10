@@ -22,6 +22,7 @@
 * Introduced support to extract Machine Translation Service Application;
 * Fixed issue with Availability Groups not being properly identified and throwing error in script;
 * Introduced support for Extraction Mode: Lite, Default and Full;
+* Introduced support for Prereqs and Binaries Installation;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
@@ -132,6 +133,12 @@ function Orchestrator
             Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber
             $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '" + $serverNumber.ToString() + "'}.NodeName`r`n    {`r`n"
             
+            Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstallPrereqs
+
+            Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstall
+
             Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
             Read-SPFarm -ServerName $spServer.Address
 
@@ -523,7 +530,6 @@ function Read-OperatingSystemVersion
     }    
     $Script:dscConfigContent += "#>`r`n`r`n"
 }
-
 function Read-SQLVersion
 {
     $uniqueServers = @()
@@ -602,8 +608,52 @@ function Read-SPProductVersions
     }
     $Script:dscConfigContent += "#>`r`n"
 }
+function Read-SPInstall
+{
+    Add-ConfigurationDataEntry -Node $env:ComputerName -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    $Script:dscConfigContent += "        if(`$AllNodes.Where{`$null -ne `$_.FullInstallation}.FullInstallation)`r`n"
+    $Script:dscConfigContent += "        {`r`n"
+    $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
+    Add-ConfigurationDataEntry -Node $env:ComputerName -Key "SPInstallationBinaryPath" -Value "\\<location>" -Description "Location of the SharePoint Binaries (local path or network share);"
+    $Script:dscConfigContent += "                BinaryDir = `$AllNodes.Where{`$null -ne `$_.SPInstallationBinaryPath}.SPInstallationBinaryPath;`r`n"
+    Add-ConfigurationDataEntry -Node $env:ComputerName -Key "SPProductKey" -Value "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -Description "SharePoint Product Key"
+    $Script:dscConfigContent += "                ProductKey = `$AllNodes.Where{`$null -ne `$_.SPProductKey}.SPProductKey;`r`n"
+    $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
 
-<## This function declares the SPCreateFarm object required to create the config and admin database for the resulting SharePoint Farm. #>
+    if($PSVersionTable.PSVersion.Major -eq 4)
+    {
+        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    else {
+        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    $Script:dscConfigContent += "            }`r`n"
+    $Script:dscConfigContent += "        }`r`n"
+}
+
+function Read-SPInstallPrereqs
+{
+    Add-ConfigurationDataEntry -Node $env:ComputerName -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    $Script:dscConfigContent += "        if(`$AllNodes.Where{`$null -ne `$_.FullInstallation}.FullInstallation)`r`n"
+    $Script:dscConfigContent += "        {`r`n"
+    $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
+    Add-ConfigurationDataEntry -Node $env:ComputerName -Key "SPPrereqsInstallerPath" -Value "\\<location>" -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
+    $Script:dscConfigContent += "                InstallerPath = `$AllNodes.Where{`$null -ne `$_.SPPrereqsInstallerPath}.SPPrereqsInstallerPath;`r`n"
+    $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
+    $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
+
+    if($PSVersionTable.PSVersion.Major -eq 4)
+    {
+        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    else {
+        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    $Script:dscConfigContent += "            }`r`n"
+    $Script:dscConfigContent += "        }`r`n"
+}
+
+<## This function declares the SPFarm object required to create the config and admin database for the resulting SharePoint Farm. #>
 function Read-SPFarm (){
     param(
         [string]$ServerName
@@ -645,12 +695,12 @@ function Read-SPFarm (){
 
     if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
     {
-        Add-ConfigurationDataEntry -Node $env:ComputerName -Key "DatabaseServer" -Value $configDB.NormalizedDataSource
+        Add-ConfigurationDataEntry -Node $env:ComputerName -Key "DatabaseServer" -Value $configDB.NormalizedDataSource -Description "Name of the Database Server associated with the destination SharePoint Farm;"
     }
 
     if($null -eq (Get-ConfigurationDataEntry -Key "PassPhrase"))
     {
-        Add-ConfigurationDataEntry -Node $env:ComputerName -Key "PassPhrase" -Value "pass@word1"
+        Add-ConfigurationDataEntry -Node $env:ComputerName -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
     }
     $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$AllNodes.Where{`$null -ne `$_.PassPhrase}.PassPhrase -AsPlainText -Force));`r`n"
     
@@ -742,7 +792,7 @@ function Read-SPWebApplications (){
             $results.Remove("AllowAnonymous")
         }
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$null -ne `$_.DatabaseServer}.DatabaseServer"
         
         $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1301,7 +1351,7 @@ function Read-DiagnosticLoggingSettings{
     $results = Get-TargetResource @params
     $results = Repair-Credentials -results $results
 
-    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "LogPath" -Value $results.LogPath
+    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "LogPath" -Value $results.LogPath -Description "Path where the SharePoint ULS logs will be stored;"
     $results.LogPath = "`$AllNodes.Where{`$Null -ne `$_.LogPath}.LogPath"
 
     $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1326,7 +1376,7 @@ function Read-SPMachineTranslationServiceApp
         $results = Get-TargetResource @params
         $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1404,11 +1454,11 @@ function Read-SPUsageServiceApplication{
         else
         {
             $failOverFound = $true
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageAppFailOverDatabaseServer" -Value $results.FailOverDatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageAppFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the Usage Service Application Failover Database;"
             $results.FailOverDatabaseServer = "`$AllNodes.Where{`$null -ne `$_.NodeName.UsageAppFailOverDatabaseServer}.UsageAppFailOverDatabaseServer"
         }
         
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageLogLocation" -Value $results.UsageLogLocation
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageLogLocation" -Value $results.UsageLogLocation -Description "Path where the Usage Logs will be stored;"
         $results.UsageLogLocation = "`$AllNodes.Where{`$Null -ne `$_.NodeName.UsageLogLocation}.UsageLogLocation"
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1542,13 +1592,13 @@ function Read-UserProfileServiceapplication ($modulePath, $params){
                 }
                 $results = Repair-Credentials -results $results
                 
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SyncDBServer" -Value $results.SyncDBServer
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SyncDBServer" -Value $results.SyncDBServer -Description "Name of the User Profile Service Sync Database Server;"
                 $results.SyncDBServer = "`$AllNodes.Where{`$Null -ne `$_.SyncDBServer}.SyncDBServer"
 
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ProfileDBServer" -Value $results.ProfileDBServer
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ProfileDBServer" -Value $results.ProfileDBServer -Description "Name of the User Profile Service Profile Database Server;"
                 $results.ProfileDBServer = "`$AllNodes.Where{`$Null -ne `$_.ProfileDBServer}.ProfileDBServer"
 
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SocialDBServer" -Value $results.SocialDBServer
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
                 $results.SocialDBServer = "`$AllNodes.Where{`$Null -ne `$_.SocialDBServer}.SocialDBServer"
 
                 $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1605,7 +1655,7 @@ function Read-SecureStoreServiceApplication
             $results.FailOverDatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.SecureStoreFailOverDatabaseServer}.SecureStoreFailOverDatabaseServer"
         }
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 		
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1644,7 +1694,7 @@ function Read-ManagedMetadataServiceApplication
                 
                 $results.TermStoreAdministrators = Set-TermStoreAdministratorsBlock $results.TermStoreAdministrators
 
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                 $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
                 $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1739,7 +1789,7 @@ function Read-SPWordAutomationServiceApplication
             }
             $results = Repair-Credentials -results $results
 
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1902,7 +1952,7 @@ function Read-SPPerformancePointServiceApplication
             }
             $results = Repair-Credentials -results $results
 
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -2139,7 +2189,7 @@ function Read-BCSServiceApplication ($modulePath, $params){
             }
             $results = Repair-Credentials -results $results
 
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
@@ -2196,7 +2246,7 @@ function Read-SearchServiceApplication
             $results["DatabaseServer"] = $searchSAInstance.SearchAdminDatabase.Server.Name
             $results = Repair-Credentials -results $results
 
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -2360,7 +2410,7 @@ function Read-SPContentDatabase
         $results = Get-TargetResource @params
         $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"        
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -2387,7 +2437,7 @@ function Read-SPAccessServiceApp
         
         $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
         $Script:dscConfigContent += "        SPAccessServiceApp " + $spAccessService.Name.Replace(" ", "") + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
@@ -2725,7 +2775,7 @@ function Read-SPFarmSolution
 
 function Save-SPFarmsolution($Path)
 {
-    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path
+    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are location (local path or Network Share);"
     $solutions = Get-SPSolution
     $farm = Get-SPFarm
     foreach($solution in $solutions)
@@ -3205,7 +3255,7 @@ function Read-SPBlobCacheSettings
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
 
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "BlobCacheLocation" -Value $results.Location
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
             $results.Location = "`$AllNodes.Where{`$Null -ne `$_.BlobCacheLocation}.BlobCacheLocation"
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -3266,7 +3316,7 @@ function Read-SPAppManagementServiceApp
         $results.DatabaseServer = $appManagement.Databases.NormalizedDataSource
         $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.DatabaseServer}.DatabaseServer"
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -3654,7 +3704,7 @@ function Get-SPReverseDSC()
             $missingUsers += "`"" + $missingUser + "`","
         }
         $missingUsers = "@(" + $missingUsers.Remove($missingUsers.Length-1, 1) + ")"
-        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "RequiredUsers" -Value $missingUsers
+        Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
     }    
 
     New-ConfigurationDataDocument -Path $outputConfigurationData
