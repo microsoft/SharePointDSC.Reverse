@@ -1651,7 +1651,7 @@ function Read-SecureStoreServiceApplication
         else
         {
             $foundFailOver = $true
-            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SecureStoreFailOverDatabaseServer" -Value $results.FailOverDatabaseServer
+            Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SecureStoreFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the SQL Server that hosts the FailOver database for your SharePoint Farm's Secure Store Service Application;"
             $results.FailOverDatabaseServer = "`$AllNodes.Where{`$Null -ne `$_.SecureStoreFailOverDatabaseServer}.SecureStoreFailOverDatabaseServer"
         }
 

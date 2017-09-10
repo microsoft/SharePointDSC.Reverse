@@ -14,6 +14,9 @@ Once all the files have been copied, simply open a new PowerShell console as an 
 # Extraction Modes
 The ReverseDSC Orchestrator for SharePoint offers different extraction modes. Please refer to the Extraction Mode page to learn more. https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Extraction-Modes
 
+# Configuration Data
+Upon extracting the Desired State Configuration from an existing SharePoint farm, the ReverseDSC Orchestrator for SharePoint will generate a Configuration Data file (.psd1) that will expose all the environment's specific variables for your farm. To replicate your SharePoint Farm into a different environment, all you have to do is ensure the values exposed in that file reflect the values for the destination environment. You can find a complete list of all parameters that are exposed in this Configuration Data File (.psd1) on the following Wiki page https://github.com/Microsoft/SharePointDSC.Reverse/wiki/ConfigurationData
+
 
 # Parity with SharePointDSC
 The following Wiki Page describes the parity between SharePointDSC and ReverseDSC by listing the Resources that are currently covered and being extracted.
