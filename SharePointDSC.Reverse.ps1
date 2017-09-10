@@ -21,9 +21,10 @@
 * Exposes variables in a .PSD1 ConfigurationData file;
 * Introduced support to extract Machine Translation Service Application;
 * Fixed issue with Availability Groups not being properly identified and throwing error in script;
+* Introduced support for Extraction Mode: Lite, Default and Full;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.8.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
 
 <# 
 
@@ -49,7 +50,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 $Script:dscConfigContent = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "1.8.0.0"
+$SPDSCVersion = "1.9.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 if($Mode.ToLower() -eq "lite")
