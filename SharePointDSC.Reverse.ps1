@@ -130,7 +130,7 @@ function Orchestrator
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
-            Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber
+            Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
             $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '" + $serverNumber.ToString() + "'}.NodeName`r`n    {`r`n"
             
             Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -184,7 +184,7 @@ function Orchestrator
                 Read-StateServiceApplication
 
                 Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-UserProfileServiceapplication
+                Read-UserProfileServiceApplication
 
                 Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPMachineTranslationServiceApp
@@ -452,7 +452,7 @@ function Test-Prerequisites
     <# Check to see if the SharePointDSC module is installed on the machine #>
     if(Get-Command "Get-DSCModule" -EA SilentlyContinue)
     {
-        $spDSCCheck = Get-DSCResource -Module "SharePointDSC" | Where-Object{$_.Version -eq $SPDSCVersion}
+        $spDSCCheck = Get-DSCResource -Module "SharePointDSC" | Where-Object{$_.Version -eq $SPDSCVersion} -ErrorAction SilentlyContinue
         <# Because the SkipPublisherCheck parameter doesn't seem to be supported on Win2012R2 / PowerShell prior to 5.1, let's set whether the parameters are specified here. #>
         if (Get-Command -Name Install-Module -ParameterName SkipPublisherCheck -ErrorAction SilentlyContinue)
         {
@@ -502,7 +502,7 @@ function Test-Prerequisites
             Write-Host "`r`nW102"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
             Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
         }
-        $moduleObject = Get-DSCResource | Where-Object{$_.Module -like "SharePointDsc"}
+        $moduleObject = Get-DSCResource | Where-Object{$_.Module -like "SharePointDsc"} -ErrorAction SilentlyContinue
         if(!$moduleObject)
         {
             Write-Host "`r`nE103"  -BackgroundColor Red -ForegroundColor Black -NoNewline
@@ -833,6 +833,7 @@ function Read-SPWebApplications (){
                     {
                         $resultsFeature.Remove("InstalAccount")
                     }
+                    $resultsFeature.Url = 
                     $resultsFeature = Repair-Credentials -results $resultsFeature
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
                     $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
@@ -1002,7 +1003,10 @@ function Read-SPSitesAndWebs (){
             }
             else {
                 $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
-                $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
+                if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
+                {
+                    $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
+                }
             }
             if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
             {
@@ -2317,7 +2321,7 @@ function Get-SPServiceAppSecurityMembers($member)
         $isUserGuid = $true
     }
     catch{$isUserGuid = $false}
-    if(!($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid))
+    if($member.AccessLevel -ne $null -and !($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid) -and $member.AccessLevel -ne "")
     {
         $userName = Get-Credentials -UserName $member.UserName
         if($null -eq $userName)
