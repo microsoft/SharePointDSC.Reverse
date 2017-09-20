@@ -123,6 +123,7 @@ function Orchestrator
   Set-Imports
 
   $serverNumber = 1
+  $nodeLoopDone = $false
   foreach($spServer in $spServers)
   {
       $Script:currentServerName = $spServer.Name
@@ -136,8 +137,9 @@ function Orchestrator
           {
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
           }
-          else {
+          elseif(!$nodeLoopDone){              
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
+              $nodeLoopDone = $true
           }
           
           Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -641,7 +643,7 @@ function Read-SPInstall
 function Read-SPInstallPrereqs
 {
   Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
-  $Script:dscConfigContent += "        if(`$$ConfigurationData.NonNodeData.FullInstallation)`r`n"
+  $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
   $Script:dscConfigContent += "        {`r`n"
   $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
   Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value "\\<location>" -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
@@ -1907,13 +1909,13 @@ function Read-SPTimerJobState
   {
       if($timer -ne $null)
       {
-          $params.Name = $timer.Name
+          $params.TypeName = $timer.Name
           if($null -ne $timer.WebApplication)
           {
-              $params.WebApplication = $timer.WebApplication.DisplayName;
+              $params.WebAppUrl = $timer.WebApplication.Url;
           }
           else {
-              $params.Remove("WebApplication")
+              $params.WebAppUrl = "N/A"
           }
 
           $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
