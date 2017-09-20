@@ -1015,7 +1015,10 @@ function Read-SPSitesAndWebs (){
                 {
                     $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
                 }
-            }            
+            }       
+            else {
+                $results.Remove("QuotaTemplate")
+            }     
           }
           if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
           {
