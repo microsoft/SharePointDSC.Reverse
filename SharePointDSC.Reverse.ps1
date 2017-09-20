@@ -214,6 +214,9 @@ function Orchestrator
               Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
               Read-SPAccessServiceApp
 
+              Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+              Read-SPAccessServices2010
+
               Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
               Read-SPAntivirusSettings
 
@@ -2455,6 +2458,29 @@ function Read-SPAccessServiceApp
   }
 }
 
+function Read-SPAccessServices2010
+{
+  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAccessServices2010\MSFT_SPAccessServices2010.psm1")
+  Import-Module $module
+  $params = Get-DSCFakeParameters -ModulePath $module
+  $serviceApps = Get-SPServiceApplication
+  $serviceApps = $serviceApps | Where-Object -FilterScript { 
+          $_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"}
+
+  foreach($spAccessService in $serviceApps)
+  {        
+      $params.Name = $spAccessService.Name
+      $results = Get-TargetResource @params
+      
+      $results = Repair-Credentials -results $results
+
+      $Script:dscConfigContent += "        SPAccessServices2010 " + $spAccessService.Name.Replace(" ", "") + "`r`n"
+      $Script:dscConfigContent += "        {`r`n"
+      $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+      $Script:dscConfigContent += $currentBlock
+      $Script:dscConfigContent += "        }`r`n"  
+  }
+}
 function Read-SPAppCatalog
 {
   $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppCatalog\MSFT_SPAppCatalog.psm1")
