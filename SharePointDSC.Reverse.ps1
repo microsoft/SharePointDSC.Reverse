@@ -1008,11 +1008,14 @@ function Read-SPSitesAndWebs (){
               $results.Remove("QuotaTemplate")
           }
           else {
-              $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
-              if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
-              {
-                  $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
-              }
+            $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
+            if($null -ne $quotaTemplateName -and $null -ne $quotaTemplateName.Name)
+            {
+                if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
+                {
+                    $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
+                }
+            }            
           }
           if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
           {
