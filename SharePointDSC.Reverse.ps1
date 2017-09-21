@@ -39,7 +39,8 @@ param(
     [System.String]$Mode = "Default",
     [switch]$Standalone,
     [Boolean]$Confirm = $true,
-    [String]$OutputFile = $null)
+    [String]$OutputFile = $null,
+    [switch]$SkipSitesAndWebs = $false)
 
 <## Script Settings #>
 $VerbosePreference = "SilentlyContinue"
@@ -171,14 +172,17 @@ function Orchestrator
               Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
               Read-SPServiceApplicationPools
 
-              Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPContentDatabase
+              if($SkipSitesAndWebs)
+              {
+                Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPContentDatabase
 
-              Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPQuotaTemplate
-
-              Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPSitesAndWebs
+                Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPQuotaTemplate
+              
+                Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSitesAndWebs
+              }
 
               Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
               Read-DiagnosticLoggingSettings
@@ -2541,27 +2545,29 @@ function Read-SPSearchFileType
   Import-Module $module
   $params = Get-DSCFakeParameters -ModulePath $module
 
-  $ssa = Get-SPServiceApplication | Where-Object -FilterScript { 
+  $ssas = Get-SPServiceApplication | Where-Object -FilterScript { 
           $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
   }
-
-  if($null -ne $ssa)
+  foreach($ssa in $ssas)
   {
-      $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
+    if($null -ne $ssa)
+    {
+        $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
 
-      foreach($fileFormat in $fileFormats)
-      {
-        $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.ServiceAppName = $ssa.DisplayName
-        $params.FileType = $fileFormat.Identity
-        $results = Get-TargetResource @params
+        foreach($fileFormat in $fileFormats)
+        {
+            $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.ServiceAppName = $ssa.DisplayName
+            $params.FileType = $fileFormat.Identity
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
+            $results = Repair-Credentials -results $results
 
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
-     }
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+    }
   }
 }
 
@@ -2716,6 +2722,68 @@ function Read-SPSearchCrawlRule
           }
       }
   }
+}
+
+function Read-SPSearchCrawlRule
+{
+  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchCrawlRule\MSFT_SPSearchCrawlRule.psm1")
+  Import-Module $module
+  $params = Get-DSCFakeParameters -ModulePath $module
+
+  $ssas = Get-SPServiceApplication | Where-Object -FilterScript { 
+          $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
+  }
+  foreach($ssa in $ssas)
+  {
+      if($null -ne $ssa)
+      {
+          $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
+
+          foreach($crawlRule in $crawlRules)
+          {
+              $Script:dscConfigContent += "        SPSearchCrawlRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+              $Script:dscConfigContent += "        {`r`n"
+              $params.ServiceAppName = $ssa.DisplayName
+              $params.Path = $crawlRule.Path
+              $params.Remove("CertificateName")
+              $results = Get-TargetResource @params
+              $results = Repair-Credentials -results $results
+              $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+              $Script:dscConfigContent += "        }`r`n"
+          }
+      }
+  }
+}
+
+function Read-SPSearchCrawlerImpactRule
+{
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchCrawlerImpactRule\MSFT_SPSearchCrawlerImpactRule.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
+  
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript { 
+            $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
+    }
+    foreach($ssa in $ssas)
+    {
+        if($null -ne $ssa)
+        {
+            $impactRules = Get-SPEnterpriseSearchSiteHitRule -SearchService $ssa
+  
+            foreach($crawlRule in $crawlRules)
+            {
+                $Script:dscConfigContent += "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.ServiceAppName = $ssa.DisplayName
+                $params.Path = $crawlRule.Path
+                $params.Remove("CertificateName")
+                $results = Get-TargetResource @params
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }
+        }
+    }
 }
 
 function Read-SPOfficeOnlineServerBinding
