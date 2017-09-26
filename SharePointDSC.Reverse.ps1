@@ -55,6 +55,7 @@ $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
 $SPDSCVersion = "1.9.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
+$script:SkipSitesAndWebs = $SkipSitesAndWebs
 if($Mode.ToLower() -eq "lite")
 {
   $Script:ExtractionModeValue = 1
@@ -145,7 +146,7 @@ function Orchestrator
               Read-SPInstall
     
               Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarm -ServerName $spServer.Address
+              Read-SPFarm -ServerName $spServer.Address -RunCentralAdmin $true
           }
           elseif(!$nodeLoopDone){              
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
@@ -158,7 +159,7 @@ function Orchestrator
               Read-SPInstall
     
               Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarm -ServerName $spServer.Address
+              Read-SPFarm -ServerName $spServer.Address -RunCentralAdmin $false
           }        
 
           if($serverNumber -eq 1)
@@ -681,7 +682,8 @@ function Read-SPInstallPrereqs
 <## This function declares the SPFarm object required to create the config and admin database for the resulting SharePoint Farm. #>
 function Read-SPFarm (){
   param(
-      [string]$ServerName
+      [string]$ServerName,
+      [bool]$RunCentralAdmin
   )
   $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
   $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFarm\MSFT_SPFarm.psm1")
@@ -730,12 +732,10 @@ function Read-SPFarm (){
   $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$ConfigurationData.NonNodeData.PassPhrase -AsPlainText -Force));`r`n"
   
   $currentServer = Get-SPServer $ServerName
-  $centralAdminStatus = Get-SPServiceInstance -Server $currentServer | Where-Object{$_.TypeName -eq "Central Administration"}
-  $runCentralAdministration = if($centralAdminStatus.Status -eq "Online"){$true}else{$false}
-
+  
   if(!$results.ContainsKey("RunCentralAdmin"))
   {
-      $results.Add("RunCentralAdmin", $runCentralAdministration)
+      $results.Add("RunCentralAdmin", $RunCentralAdmin)
   }
 
   if($spMajorVersion -ge 16)
@@ -901,6 +901,10 @@ function Read-SPWebApplications (){
       {
           $resultsEmail.Remove("UseTLS")
       }
+      if($null -eq $resultsEmail["ReplyToAddress"])
+      {
+          $resultsEmail["ReplyToAddress"] = "*"
+      }
       if($null -ne $resultsEmail["SMTPServer"] -and "" -ne $resultsEmail["SMTPServer"])
       {
           Write-Host "    -> Scanning Outgoing Email Settings"
@@ -1024,115 +1028,13 @@ function Read-SPSitesAndWebs (){
   foreach($spSite in $spSites)
   {
       if(!$spSite.IsSiteMaster)
-      {
-          $siteTitle = $spSite.RootWeb.Title
-          $siteUrl = $spSite.Url
-          Write-Host "Scanning SPSite [$i/$total] {$siteUrl}"
-          $dependsOnItems = @("[SPWebApplication]" + $spSite.WebApplication.Name.Replace(" ", ""))
-          $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSite\MSFT_SPSite.psm1")
-          Import-Module $module
-          $params = Get-DSCFakeParameters -ModulePath $module
-          $siteGuid = [System.Guid]::NewGuid().toString()
-          
-          if($siteTitle -eq $null)
-          {
-              $siteTitle = "SiteCollection"
-          }
-          $Script:dscConfigContent += "        SPSite " + $siteGuid + "`r`n"
-          $Script:dscConfigContent += "        {`r`n"
-          $params.Url = $spSite.Url
-          $results = Get-TargetResource @params
-
-          <# WA - Somehow the WebTemplateID returned for App Catalog is 18, but the template is APPCATALOG#0 #>
-          if($results.Template -eq "APPCATALOG#18")
-          {
-              $results.Template = "APPCATALOG#0"
-          }
-          <# If the current Quota ID is 0, it means no quota templates were used. Remove param in that case. #>
-          if($spSite.Quota.QuotaID -eq 0)
-          {
-              $results.Remove("QuotaTemplate")
-          }
-          else {
-              $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
-              if($null -ne $quotaTemplateName -and $null -ne $quotaTemplateName.Name)
-              {
-                if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
-                {
-                    $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
-                }
-              }
-          }
-          if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
-          {
-              $results.Remove("SecondaryOwnerAlias")
-          }
-          if($null -eq $results.Get_Item("SecondaryEmail"))
-          {
-              $results.Remove("SecondaryEmail")
-          }
-          if($null -eq $results.Get_Item("OwnerEmail") -or "" -eq $results.Get_Item("OwnerEmail"))
-          {
-              $results.Remove("OwnerEmail")
-          }
-          if($null -eq $results.Get_Item("HostHeaderWebApplication"))
-          {
-              $results.Remove("HostHeaderWebApplication")
-          }
-          if($null -eq $results.Get_Item("Name") -or "" -eq $results.Get_Item("Name"))
-          {
-              $results.Remove("Name")
-          }
-          if($null -eq $results.Get_Item("Description") -or "" -eq $results.Get_Item("Description"))
-          {
-              $results.Remove("Description")
-          }
-          else
-          {
-              $results.Description = $results.Description.Replace("`"", "'")
-          }
-          $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
-          $results = Repair-Credentials -results $results
-
-          $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
-          if($null -ne $ownerAlias)
-          {            
-              $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-              $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
-          }
-          else
-          {
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          }
-          if($results.ContainsKey("SecondaryOwnerAlias"))
-          {
-              $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
-              if($null -ne $secondaryOwner)
-              {            
-                  $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
-                  $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
-              }
-              else {
-                  Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
-              }
-          }
-          
-          $Script:dscConfigContent += $currentBlock
-          $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
-          $Script:dscConfigContent += "        }`r`n"
-
-          <# Nik20170112 - There are restrictions preventing this setting from being applied if the PsDscRunAsCredential parameter is not used.
-                          Since this is only available in WMF 5, we check to see if the node farm we are extracting the configuration from is
-                          running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
-          if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
-          {
-              Write-Host "    -> Scanning SharePoint Designer Settings"
-              Read-SPDesignerSettings($spSite.Url, "SiteCollection")
-          }
-          if($Script:ExtractionModeValue -eq 3)
-          {
+      {          
+        $siteTitle = $spSite.RootWeb.Title
+        $siteUrl = $spSite.Url
+        Write-Host "Scanning SPSite [$i/$total] {$siteUrl}"
+        Read-SPSite $siteUrl
+        if($Script:ExtractionModeValue -eq 3)
+        {
               $webs = Get-SPWeb -Limit All -Site $spsite
               $j = 1
               $totalWebs = $webs.Length
@@ -1240,6 +1142,115 @@ function Read-SPSitesAndWebs (){
           }
         $i++
   }
+}
+
+function Read-SPSite($spSiteUrl)
+{
+    $spSite = Get-SPSite $spSiteUrl
+    $siteTitle = $spSite.RootWeb.Title
+    $dependsOnItems = @("[SPWebApplication]" + $spSite.WebApplication.Name.Replace(" ", ""))
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSite\MSFT_SPSite.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
+    $siteGuid = [System.Guid]::NewGuid().toString()
+    
+    if($siteTitle -eq $null)
+    {
+        $siteTitle = "SiteCollection"
+    }
+    $Script:dscConfigContent += "        SPSite " + $siteGuid + "`r`n"
+    $Script:dscConfigContent += "        {`r`n"
+    $params.Url = $spSite.Url
+    $results = Get-TargetResource @params
+
+    <# WA - Somehow the WebTemplateID returned for App Catalog is 18, but the template is APPCATALOG#0 #>
+    if($results.Template -eq "APPCATALOG#18")
+    {
+        $results.Template = "APPCATALOG#0"
+    }
+    <# If the current Quota ID is 0, it means no quota templates were used. Remove param in that case. #>
+    if($spSite.Quota.QuotaID -eq 0)
+    {
+        $results.Remove("QuotaTemplate")
+    }
+    else {
+        $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
+        if($null -ne $quotaTemplateName -and $null -ne $quotaTemplateName.Name)
+        {
+          if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
+          {
+              $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
+          }
+        }
+    }
+    if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
+    {
+        $results.Remove("SecondaryOwnerAlias")
+    }
+    if($null -eq $results.Get_Item("SecondaryEmail"))
+    {
+        $results.Remove("SecondaryEmail")
+    }
+    if($null -eq $results.Get_Item("OwnerEmail") -or "" -eq $results.Get_Item("OwnerEmail"))
+    {
+        $results.Remove("OwnerEmail")
+    }
+    if($null -eq $results.Get_Item("HostHeaderWebApplication"))
+    {
+        $results.Remove("HostHeaderWebApplication")
+    }
+    if($null -eq $results.Get_Item("Name") -or "" -eq $results.Get_Item("Name"))
+    {
+        $results.Remove("Name")
+    }
+    if($null -eq $results.Get_Item("Description") -or "" -eq $results.Get_Item("Description"))
+    {
+        $results.Remove("Description")
+    }
+    else
+    {
+        $results.Description = $results.Description.Replace("`"", "'")
+    }
+    $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
+    $results = Repair-Credentials -results $results
+
+    $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+    if($null -ne $ownerAlias)
+    {            
+        $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+    }
+    else
+    {
+        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    }
+    if($results.ContainsKey("SecondaryOwnerAlias"))
+    {
+        $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
+        if($null -ne $secondaryOwner)
+        {            
+            $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
+        }
+        else {
+            Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
+        }
+    }
+    
+    $Script:dscConfigContent += $currentBlock
+    $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
+    $Script:dscConfigContent += "        }`r`n"
+
+    <# Nik20170112 - There are restrictions preventing this setting from being applied if the PsDscRunAsCredential parameter is not used.
+                    Since this is only available in WMF 5, we check to see if the node farm we are extracting the configuration from is
+                    running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
+    if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
+    {
+        Write-Host "    -> Scanning SharePoint Designer Settings"
+        Read-SPDesignerSettings($spSite.Url, "SiteCollection")
+    }
 }
 
 <## This function generates a list of all Managed Paths, no matter what their associated Web Application is. The xSharePoint DSC Resource uses the WebAppUrl attribute to identify what Web Applicaton they belong to. #>
@@ -2423,7 +2434,7 @@ function Read-SearchServiceApplication
           $contentSources = Get-SPEnterpriseSearchCrawlContentSource -SearchApplication $searchSAInstance.Name
 
           $j = 1
-          $totalCS = $contentSource.Length
+          $totalCS = $contentSources.Length
           foreach($contentSource in $contentSources)
           {
               $csName = $contentSource.Name
@@ -2667,7 +2678,6 @@ function Read-SPAppCatalog
 
   foreach($webApp in $webApps)
   {
-
       $feature = $webApp.Features.Item([Guid]::Parse("f8bea737-255e-4758-ab82-e34bb46f5828"))
       if($null -ne $feature)
       {
@@ -2676,6 +2686,11 @@ function Read-SPAppCatalog
 
           if($null -ne $appCatalogSite)
           {
+              <# Make sure we capture the SPSite first, if the SkipSitesAndWebs switch is set #>
+              if($script:SkipSitesAndWebs)
+              {
+                  Read-SPSite $appCatalogSite.Url
+              }
               $catUrl = $appCatalogSite.Url
               Write-Host "Scanning App Catalog {$catUrl}"
               $Script:dscConfigContent += "        SPAppCatalog " + [System.Guid]::NewGuid().ToString() + "`r`n"
@@ -3905,14 +3920,19 @@ function Read-SPAlternateUrl
 
   foreach($alternateUrl in $alternateUrls)
   {
-      $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
-      $Script:dscConfigContent += "        {`r`n"
-      $params.WebAppUrl = $alternateUrl.Uri.AbsoluteUri
-      $params.Zone = $alternateUrl.UrlZone
-      $results = Get-TargetResource @params
-      $results = Repair-Credentials -results $results
-      $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-      $Script:dscConfigContent += "        }`r`n"  
+      $webAppUrl = $alternateUrl.Uri.AbsoluteUri
+      $wa = Get-SPWebapplication $webAppUrl
+      if($null -ne $wa)
+      {
+        $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"
+        $params.WebAppUrl = $alternateUrl.Uri.AbsoluteUri
+        $params.Zone = $alternateUrl.UrlZone
+        $results = Get-TargetResource @params
+        $results = Repair-Credentials -results $results
+        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $Script:dscConfigContent += "        }`r`n"  
+      }
   }
 }
 
