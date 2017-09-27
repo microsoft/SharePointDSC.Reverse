@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.9.0.0
+.VERSION 2.0.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -758,12 +758,16 @@ function Read-SPFarm (){
       $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
 
       $featuresAlreadyAdded = @()
+      $i = 1
+      $total = $farmFeatures.Length
       foreach($farmFeature in $farmFeatures)
       {
+          $featureName = $farmFeature.DisplayName
+          Write-Host "Scanning Farm Feature [$i/$total] {$featureName}"
           if(!$featuresAlreadyAdded.Contains($farmFeature.DisplayName))
           {
-              $featuresAlreadyAdded += $farmFeature.DisplayName
-              $paramsFeature.Name = $farmFeature.DisplayName
+              $featuresAlreadyAdded += $featureName
+              $paramsFeature.Name = $featureName
               $paramsFeature.FeatureScope = "Farm"
               $resultsFeature = Get-TargetResource @paramsFeature
 
@@ -784,6 +788,7 @@ function Read-SPFarm (){
                   $Script:dscConfigContent += "        }`r`n"
               }
           }
+          $i++
       }
   }
 }
@@ -2691,6 +2696,10 @@ function Read-SPAppCatalog
               {
                   Read-SPSite $appCatalogSite.Url
               }
+              $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppCatalog\MSFT_SPAppCatalog.psm1")
+              Import-Module $module
+              $params = Get-DSCFakeParameters -ModulePath $module
+
               $catUrl = $appCatalogSite.Url
               Write-Host "Scanning App Catalog {$catUrl}"
               $Script:dscConfigContent += "        SPAppCatalog " + [System.Guid]::NewGuid().ToString() + "`r`n"
