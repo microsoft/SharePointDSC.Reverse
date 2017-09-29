@@ -2537,27 +2537,30 @@ function Read-SPSearchFileType
   Import-Module $module
   $params = Get-DSCFakeParameters -ModulePath $module
 
-  $ssa = Get-SPServiceApplication | Where-Object -FilterScript { 
+  $ssas = Get-SPServiceApplication | Where-Object -FilterScript { 
           $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
   }
 
-  if($null -ne $ssa)
+  foreach($ssa in $ssas)
   {
-      $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
+    if($null -ne $ssa)
+    {
+        $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
 
-      foreach($fileFormat in $fileFormats)
-      {
-        $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.ServiceAppName = $ssa.DisplayName
-        $params.FileType = $fileFormat.Identity
-        $results = Get-TargetResource @params
+        foreach($fileFormat in $fileFormats)
+        {
+            $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.ServiceAppName = $ssa.DisplayName
+            $params.FileType = $fileFormat.Identity
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
+            $results = Repair-Credentials -results $results
 
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
-     }
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+    }
   }
 }
 
