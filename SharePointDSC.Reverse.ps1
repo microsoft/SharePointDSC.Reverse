@@ -1925,6 +1925,8 @@ function Read-SPTimerJobState
               $params.Remove("WebApplication")
           }
 
+          <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
+          $Script:dscConfigContent += "<#`r`n"
           $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
           $Script:dscConfigContent += "        {`r`n"
           $results = Get-TargetResource @params
@@ -1936,6 +1938,7 @@ function Read-SPTimerJobState
           $results = Repair-Credentials -results $results
           $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
           $Script:dscConfigContent += "        }`r`n"
+          $Script:dscConfigContent += "#>`r`n"
       }
   }    
 }
