@@ -119,13 +119,14 @@ function Orchestrator
   }
   $Script:dscConfigContent += "Configuration $configName`r`n"
   $Script:dscConfigContent += "{`r`n"
-  $Script:dscConfigContent += "    <# Credentials #>`r`n"    
+  $Script:dscConfigContent += "    <# Credentials #>`r`n"
 
   Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
   Set-Imports
 
   $serverNumber = 1
   $nodeLoopDone = $false
+  $serviceLoopDone = $false
   foreach($spServer in $spServers)
   {
       $Script:currentServerName = $spServer.Name
@@ -436,14 +437,19 @@ function Orchestrator
           {
               Read-SPServiceInstance -Servers @($spServer.Name)
           }
-          else {
+          else 
+          {
               $servers = Get-SPServer
               $serverAddresses = @()
               foreach($server in $servers)
               {
                   $serverAddresses += $server.Address
               }
-              Read-SPServiceInstance -Servers $serverAddresses
+              if(!$serviceLoopDone)
+              {
+                Read-SPServiceInstance -Servers $serverAddresses
+                $serviceLoopDone = $true
+              }
           }
 
           Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -916,6 +922,10 @@ function Read-SPWebApplications (){
           $Script:dscConfigContent += "        SPOutgoingEmailSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
           $Script:dscConfigContent += "        {`r`n"
           $resultsEmail = Repair-Credentials -results $resultsEmail
+          if($null -eq $resultsEmail.ReplyToAddress -or $resultsEmail.ReplyToAddress -eq "")
+          {
+            $resultsEmail.ReplyToAddress = "*"
+          }
           $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsEmail -ModulePath $moduleEmail
           $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
           $Script:dscConfigContent += "        }`r`n"
