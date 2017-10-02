@@ -25,7 +25,7 @@
 * Introduced support for Prereqs and Binaries Installation;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.0.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
 
 <# 
 
