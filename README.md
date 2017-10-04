@@ -48,3 +48,6 @@ ReverseDSC can be used for many reasons, including:
 * Compare the configuration of two environments, or of the same environments but at two different point in time;
 * Create Development standalone machines matching production (merging multiple servers onto a single farm deployment);
 * etc.
+
+# How to Contribute?
+Please refer to the follow Wiki page if you are interested in contributing to the project: https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Contribute-to-an-Orchestrator-Script
