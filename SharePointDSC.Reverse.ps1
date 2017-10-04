@@ -16,13 +16,7 @@
 
 .RELEASENOTES
 
-* Fixed issue with UseTLS & SMTPPort for SharePoint 2013;
-* SPWeb Extraction now inserts InstallAccount or PSDSCRunAsCredentials;
-* Exposes variables in a .PSD1 ConfigurationData file;
-* Introduced support to extract Machine Translation Service Application;
-* Fixed issue with Availability Groups not being properly identified and throwing error in script;
-* Introduced support for Extraction Mode: Lite, Default and Full;
-* Introduced support for Prereqs and Binaries Installation;
+* Demo of Contribution Process
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
