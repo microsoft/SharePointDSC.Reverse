@@ -1,0 +1,20 @@
+version: 1.9.0.0-{build}
+image: WMF 5
+
+install:
+    - git clone https://github.com/PowerShell/DscResource.Tests
+
+    - ps: |
+        $moduleName = 'SharePointDsc.Reverse'
+        $mainModuleFolder = "Modules\$moduleName"
+        Import-Module -Name "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
+        Invoke-AppveyorInstallTask        
+
+build: off
+
+test_script:
+    - ps: |
+        Invoke-AppveyorTestScriptTask `
+            -Type 'Harness' `
+            -MainModulePath $mainModuleFolder `
+            -CodeCovIo

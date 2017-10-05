@@ -1,5 +1,22 @@
-# ReverseDSC for SharePoint
-This module allows you to extract the current configuration of any given SharePoint 2013 or 2016 farm as a PowerShell Desired State Configuration (DSC) .ps1 script.
+# ReverseDSC Orchestrator for SharePoint
+This module allows you to extract the current configuration of any given SharePoint 2013 or 2016 farm as a PowerShell Desired State Configuration (DSC) .ps1 script along with its associated .psd1 Configuration Data File. With these files you can then recreate an exact copy of your SharePoint Farm in another environment (cloud or on-premises).
+
+# How to Use
+The ReverseDSC Orchestrator for SharePoint only needs to be put on one server in the farm (recommended to be put on a Web-Front-End). If your machine has internet connectivity, it can be automatically installed using PowerShell 5 and above using the "Install-Script SharePointDSC.Reverse" command. This will automatically install the orchestrator and all the modules it depends on.
+
+If the server doesn't have internet connectivity, then you will need to run the "Install-Script SharePointDSC.Reverse" command from a computer that has PowerShell version 5 or greater and that had internet connectivity and copy the files manually over the server. Once the command has been run on the machine with internet connectivity, copy the following files to the exact same location on the SharePoint server:
+* C:\Program Files\WindowsPowerShell\Modules\SharePointDSC  [Entire Folder]
+* C:\Program Files\WindowsPowerShell\Modules\ReverseDSC     [Entire Folder]
+* C:\Program Files\WindowsPowerShell\Scripts\SharePointDSC.Reverse.ps1  [If folder doesn't exist on server, create it manually]
+
+Once all the files have been copied, simply open a new PowerShell console as an administrator on the server, browse to the C:\Program Files\WindowsPowerShell\Scripts folder and execute the SharePointDSC.Reverse.ps1 script. Upon running the script, you will be prompted to provide the credentials of an account that has Farm Administrator's privileges. When provided with the proper credentials, the script will automatically extract all the components include in the Extraction mode set and will prompt you to specify a locaton where to save the output. As an output, the Orchestrator script will produce a .ps1 file representing the configuration logic for your farm, and a .psd1 file that will be used as Configuration Data to compile the associated MOF file. If you are planning on using ReverseDSC to replicate your SharePoint Farm in another environment, you will need to modify the values in the .psd1 Configuration Data file before compiling your MOF files.
+
+# Extraction Modes
+The ReverseDSC Orchestrator for SharePoint offers different extraction modes. Please refer to the Extraction Mode page to learn more. https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Extraction-Modes
+
+# Configuration Data
+Upon extracting the Desired State Configuration from an existing SharePoint farm, the ReverseDSC Orchestrator for SharePoint will generate a Configuration Data file (.psd1) that will expose all the environment's specific variables for your farm. To replicate your SharePoint Farm into a different environment, all you have to do is ensure the values exposed in that file reflect the values for the destination environment. You can find a complete list of all parameters that are exposed in this Configuration Data File (.psd1) on the following Wiki page https://github.com/Microsoft/SharePointDSC.Reverse/wiki/ConfigurationData
+
 
 # Parity with SharePointDSC
 The following Wiki Page describes the parity between SharePointDSC and ReverseDSC by listing the Resources that are currently covered and being extracted.
@@ -32,19 +49,5 @@ ReverseDSC can be used for many reasons, including:
 * Create Development standalone machines matching production (merging multiple servers onto a single farm deployment);
 * etc.
 
-# Installation
-1 - On any SharePoint server within an existing 2013 or 2016 farm, install the SharePointDSC module. If the machine has internet connectivity, this is done by running "Install-Module SharePointDSC", otherwise, the module can be manually download from http://github.com/PowerShell/SharePointDSC and copied into the modules folder (e.g. C:\Program files\WindowsPowerShell\Modules).
-
-2 - On that same SharePoint server, download the latest version of the SharePointDSC.Reverse script from here https://github.com/Microsoft/SharePointDSC.Reverse/archive/master.zip and put both files (.ps1 and .psm1) in any directory on the server (they both need to be in the same folder). Recommendation is to create a folder under c:\temp and extract both files under that location;
-
-2a - Since both files have been downloaded from the internet, the recommendation is to turn off the Execution Policy on the server by running "Set-ExecutionPolicy Unrestricted" and by unblocking both files using the "Unblock-File &lt;filename&gt;" command.
-
-3 - Run the SharePointDSC.Reverse.ps1 script in an elevated PowerShell session. Upon validating that all prerequisites have been properly installed on the server, it will prompt you to provide the credentials for any account that has farm administrator rights on the farm. This is required for the script to be able to properly extract the configuration values from the existing environment. When running the script, there are several switches that can be used to speed up the extraction process:
-
-* SkipFeatures - Will skip the extraction of the Features status. By default, ReverseDSC for SharePoint will automatically extract the status of every feature (enabled and disabled) at the Farm level, at the Web Application level, at the Site Collection level as well as at the Web level. Not only does this slows down the entire extraction process, it also tends to generate extremely large resulting DSC configuration scripts. In most scenarios, you will want to use this switch to ensure the extraction results are manageable.
-
-* SkipHealthRules - Will skip the extraction of the Health Analyzer Rules. Since by default all Health Analyzer rules are enabled, this switch can be used for environments where you know for a fact rules were not manually disabled. Otherwise, these will always show as "Present".
-
-* SkipWebs - Will skip the Webs completely. The resulting DSC configuration script will contain everything down to the Site Collection if this switch is used. This can be used to speed up the analysis process, but including webs as part of the resulting script can help provide valuable insights for any given farm.
-
-4  - Once the script has finished its execution, it will prompt you to specify the path to a folder where the resulting DSC configuration script will be stored. If the folder you specify doesn't exist, the script will automatically create it and store the resulting script (e.g. SP-Farm.DSC.ps1) in it.
+# How to Contribute?
+Please refer to the follow Wiki page if you are interested in contributing to the project: https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Contribute-to-an-Orchestrator-Script
