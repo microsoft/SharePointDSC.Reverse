@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.9.0.0
+.VERSION 1.9.1.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -905,7 +905,7 @@ function Repair-Credentials($results)
 
       if($PSVersionTable.PSVersion.Major -ge 5)
       {
-          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_"))
+          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_")).Replace(" ", "").Replace("@", "")
       }
       return $results
   }
