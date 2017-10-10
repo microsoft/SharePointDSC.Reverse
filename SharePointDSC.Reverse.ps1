@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 1.9.0.0
+.VERSION 1.9.1.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,13 +16,8 @@
 
 .RELEASENOTES
 
-* Fixed issue with UseTLS & SMTPPort for SharePoint 2013;
-* SPWeb Extraction now inserts InstallAccount or PSDSCRunAsCredentials;
-* Exposes variables in a .PSD1 ConfigurationData file;
-* Introduced support to extract Machine Translation Service Application;
-* Fixed issue with Availability Groups not being properly identified and throwing error in script;
-* Introduced support for Extraction Mode: Lite, Default and Full;
-* Introduced support for Prereqs and Binaries Installation;
+* Fixed '@' in Account names;
+* Fixed secondary servers issues;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
@@ -123,6 +118,7 @@ function Orchestrator
   Set-Imports
 
   $serverNumber = 1
+  $nodeLoopDone = $false;
   foreach($spServer in $spServers)
   {
       $Script:currentServerName = $spServer.Name
@@ -136,18 +132,21 @@ function Orchestrator
           {
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
           }
-          else {
+          elseif(!$nodeLoopDone){
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
           }
           
-          Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-          Read-SPInstallPrereqs
+          if($serverNumber -eq 1 -or !$nodeLoopDone)
+          {
+            Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstallPrereqs
 
-          Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-          Read-SPInstall
+            Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstall
 
-          Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-          Read-SPFarm -ServerName $spServer.Address
+            Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPFarm -ServerName $spServer.Address
+          }
 
           if($serverNumber -eq 1)
           {
@@ -416,9 +415,18 @@ function Orchestrator
           }
 
           Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-          if(!$Standalone)
+          if(!$Standalone -and !$nodeLoopDone)
           {
-              Read-SPServiceInstance -Servers @($spServer.Name)
+              Read-SPServiceInstance -Servers @($spServer.Name)              
+
+              $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+              $Script:dscConfigContent += "        {`r`n"
+              $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+              $Script:dscConfigContent += "            {`r`n"
+              $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+              $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+              $Script:dscConfigContent += "            }`r`n"
+              $Script:dscConfigContent += "        }`r`n"
           }
           else {
               $servers = Get-SPServer
@@ -431,9 +439,17 @@ function Orchestrator
           }
 
           Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
-          Set-LCM
-
-          $Script:dscConfigContent += "`r`n    }`r`n"
+          if($serverNumber -eq 1 -or !$nodeLoopDone)
+          {
+            if($serverNumber -gt 1)
+            {
+              $nodeLoopDone = $true
+            }
+            
+            Set-LCM
+            $Script:dscConfigContent += "`r`n    }`r`n"
+          }
+          
           $serverNumber++
       }
   }    
@@ -672,7 +688,7 @@ function Read-SPFarm (){
   $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFarm\MSFT_SPFarm.psm1")
   Import-Module $module
 
-  $Script:dscConfigContent += "        SPFarm " + $ServerName + "`r`n        {`r`n"
+  $Script:dscConfigContent += "        SPFarm " + [System.Guid]::NewGuid().ToString() + "`r`n        {`r`n"
   $params = Get-DSCFakeParameters -ModulePath $module
   <# If not SP2016, remove the server role param. #>
   if ($spMajorVersion -ne 16) {
@@ -905,7 +921,7 @@ function Repair-Credentials($results)
 
       if($PSVersionTable.PSVersion.Major -ge 5)
       {
-          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_"))
+          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
       }
       return $results
   }
@@ -1294,7 +1310,6 @@ function Read-SPServiceInstance($Servers)
       $ensureValue = "Present"
       foreach($serviceInstance in $serviceInstancesOnCurrentServer)
       {
-          $i = 0
           if($serviceInstance.Status -eq "Online")
           {
               $ensureValue = "Present"
@@ -1336,15 +1351,7 @@ function Read-SPServiceInstance($Servers)
                   }
               }
           }
-      }
-      $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-      $Script:dscConfigContent += "        {`r`n"
-      $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-      $Script:dscConfigContent += "            {`r`n"
-      $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-      $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-      $Script:dscConfigContent += "            }`r`n"
-      $Script:dscConfigContent += "        }`r`n"
+        }      
       Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
   }
 }
