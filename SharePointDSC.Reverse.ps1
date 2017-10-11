@@ -18,6 +18,7 @@
 
 * Fixed '@' in Account names;
 * Fixed secondary servers issues;
+* ServerRole for SharePoint 2016 is now in ConfigurationData;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
@@ -81,7 +82,7 @@ function Orchestrator
 
   $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
   $spFarm = Get-SPFarm
-  $spServers = $spFarm.Servers
+  $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
   if($Standalone)
   {
       $i = 0;
@@ -136,6 +137,14 @@ function Orchestrator
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
           }
           
+          <# Extract the ServerRole property for SP2016 servers; #>
+          $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+          $currentServer = Get-SPServer $Script:currentServerName
+          if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
+          {
+              Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
+          }
+
           if($serverNumber -eq 1 -or !$nodeLoopDone)
           {
             Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -429,7 +438,7 @@ function Orchestrator
               $Script:dscConfigContent += "        }`r`n"
           }
           else {
-              $servers = Get-SPServer
+              $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
               $serverAddresses = @()
               foreach($server in $servers)
               {
@@ -728,6 +737,7 @@ function Read-SPFarm (){
   {
       Add-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
   }
+
   $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$ConfigurationData.NonNodeData.PassPhrase -AsPlainText -Force));`r`n"
   
   $currentServer = Get-SPServer $ServerName
@@ -741,11 +751,12 @@ function Read-SPFarm (){
 
   if($spMajorVersion -ge 16)
   {
-      $results.Add("ServerRole", $currentServer.Role)
+      $results.Add("ServerRole", "`$Node.ServerRole")
   }
   $results = Repair-Credentials -results $results
   $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
   $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
   $Script:dscConfigContent += $currentBlock
   $Script:dscConfigContent += "        }`r`n"
 
@@ -2776,16 +2787,25 @@ function Read-SPHealthAnalyzerRuleState
   foreach($healthRule in $healthRulesList.Items)
   {
       $params.Name = $healthRule.Title
-      $Script:dscConfigContent += "        SPHealthAnalyzerRuleState " + [System.Guid]::NewGuid().ToString() + "`r`n"
-      $Script:dscConfigContent += "        {`r`n"
       $results = Get-TargetResource @params
-      if($results.Get_Item("Schedule") -eq "On Demand")
+      if($null -ne $results.Schedule)
       {
-          $results.Schedule = "OnDemandOnly"    
+        $Script:dscConfigContent += "        SPHealthAnalyzerRuleState " + [System.Guid]::NewGuid().ToString() + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"      
+
+        if($results.Get_Item("Schedule") -eq "On Demand")
+        {
+            $results.Schedule = "OnDemandOnly"    
+        }
+        
+        $results = Repair-Credentials -results $results
+        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $Script:dscConfigContent += "        }`r`n"
       }
-      $results = Repair-Credentials -results $results
-      $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-      $Script:dscConfigContent += "        }`r`n"
+      else {
+          $ruleName = $healthRule.Title
+          Write-Warning "Could not extract information for rule {$ruleName}. There may be some missing service applications."
+      }
   }
 }
 
