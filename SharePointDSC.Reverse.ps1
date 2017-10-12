@@ -434,6 +434,15 @@ function Orchestrator
               $Script:dscConfigContent += "            {`r`n"
               $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
               $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+              if($PSVersionTable.PSVersion.Major -ge 5)
+              {
+                  $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+              }
+              else {
+                  $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+              }
+
               $Script:dscConfigContent += "            }`r`n"
               $Script:dscConfigContent += "        }`r`n"
           }
@@ -1082,30 +1091,33 @@ function Read-SPSitesAndWebs (){
           $results = Repair-Credentials -results $results
 
           $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+          $currentBlock = ""
           if($null -ne $ownerAlias)
           {            
               $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-              $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+          
           }
-          else
-          {
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          }
+
           if($results.ContainsKey("SecondaryOwnerAlias"))
           {
               $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
               if($null -ne $secondaryOwner)
               {            
                   $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
-                  $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
               }
               else {
                   Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
               }
           }
-          
+          $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+          if($null -ne $results.SecondaryOwnerAlias -and $results.SecondaryOwnerAlias.StartsWith("`$"))
+          {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
+          }
+          if($null -ne $results.OwnerAlias -and $results.OwnerAlias.StartsWith("`$"))
+          {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+          }
           $Script:dscConfigContent += $currentBlock
           $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
           $Script:dscConfigContent += "        }`r`n"
@@ -1330,7 +1342,11 @@ function Read-SPServiceInstance($Servers)
               $ensureValue = "Absent"
           }
           $currentService = @{Name = $serviceInstance.TypeName; Ensure = $ensureValue}
-          $serviceStatuses += $currentService
+
+          if($serviceInstance.TypeName -ne "Distributed Cache" -and $serviceInstance.TypeName -ne "User Profile Synchronization Service")
+          {
+            $serviceStatuses += $currentService
+          }
           if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
           {              
               $servicesMasterList += $serviceInstance.TypeName
