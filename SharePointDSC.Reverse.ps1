@@ -23,7 +23,7 @@
 * Fix for Distributed Cache service instance in Configuration Data;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.1"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
 
 <# 
 
