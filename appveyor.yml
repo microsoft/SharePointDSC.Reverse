@@ -5,7 +5,7 @@ install:
     - git clone https://github.com/PowerShell/DscResource.Tests
 
     - ps: |
-        $moduleName = 'SharePointDsc.Reverse'
+        $moduleName = 'ReverseDSC'
         $mainModuleFolder = "Modules\$moduleName"
         Import-Module -Name "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
         Invoke-AppveyorInstallTask        
