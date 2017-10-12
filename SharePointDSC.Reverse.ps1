@@ -16,16 +16,14 @@
 
 .RELEASENOTES
 
-* Fixed issue with UseTLS & SMTPPort for SharePoint 2013;
-* SPWeb Extraction now inserts InstallAccount or PSDSCRunAsCredentials;
-* Exposes variables in a .PSD1 ConfigurationData file;
-* Introduced support to extract Machine Translation Service Application;
-* Fixed issue with Availability Groups not being properly identified and throwing error in script;
-* Introduced support for Extraction Mode: Lite, Default and Full;
-* Introduced support for Prereqs and Binaries Installation;
+* Fixed '@' in Account names;
+* Fixed secondary servers issues;
+* ServerRole for SharePoint 2016 is now in Configuration Data;
+* Fix for SPSite Owners and Secondary Owners credentials;
+* Fix for Distributed Cache service instance in Configuration Data;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.1"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
 
 <# 
 
@@ -88,7 +86,7 @@ function Orchestrator
 
   $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
   $spFarm = Get-SPFarm
-  $spServers = $spFarm.Servers
+  $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
   if($Standalone)
   {
       $i = 0;
@@ -125,8 +123,7 @@ function Orchestrator
   Set-Imports
 
   $serverNumber = 1
-  $nodeLoopDone = $false
-  $serviceLoopDone = $false
+  $nodeLoopDone = $false;
   foreach($spServer in $spServers)
   {
       $Script:currentServerName = $spServer.Name
@@ -149,19 +146,29 @@ function Orchestrator
               Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
               Read-SPFarm -ServerName $spServer.Address -RunCentralAdmin $true
           }
-          elseif(!$nodeLoopDone){              
+          elseif(!$nodeLoopDone){
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
-              $nodeLoopDone = $true
+          }
+          
+          <# Extract the ServerRole property for SP2016 servers; #>
+          $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+          $currentServer = Get-SPServer $Script:currentServerName
+          if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
+          {
+              Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
+          }
 
-              Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPInstallPrereqs
-    
-              Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPInstall
-    
-              Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarm -ServerName $spServer.Address -RunCentralAdmin $false
-          }        
+          if($serverNumber -eq 1 -or !$nodeLoopDone)
+          {
+            Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstallPrereqs
+
+            Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPInstall
+
+            Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
+            Read-SPFarm -ServerName $spServer.Address
+          }
 
           if($serverNumber -eq 1)
           {
@@ -433,13 +440,31 @@ function Orchestrator
           }
 
           Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-          if(!$Standalone)
+          if(!$Standalone -and !$nodeLoopDone)
           {
-              Read-SPServiceInstance -Servers @($spServer.Name)
+              Read-SPServiceInstance -Servers @($spServer.Name)              
+
+              $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+              $Script:dscConfigContent += "        {`r`n"
+              $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+              $Script:dscConfigContent += "            {`r`n"
+              $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+              $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+              if($PSVersionTable.PSVersion.Major -ge 5)
+              {
+                  $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+              }
+              else {
+                  $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+              }
+
+              $Script:dscConfigContent += "            }`r`n"
+              $Script:dscConfigContent += "        }`r`n"
           }
-          else 
-          {
-              $servers = Get-SPServer
+          else {
+              $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
+
               $serverAddresses = @()
               foreach($server in $servers)
               {
@@ -453,9 +478,17 @@ function Orchestrator
           }
 
           Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
-          Set-LCM
-
-          $Script:dscConfigContent += "`r`n    }`r`n"
+          if($serverNumber -eq 1 -or !$nodeLoopDone)
+          {
+            if($serverNumber -gt 1)
+            {
+              $nodeLoopDone = $true
+            }
+            
+            Set-LCM
+            $Script:dscConfigContent += "`r`n    }`r`n"
+          }
+          
           $serverNumber++
       }
   }    
@@ -735,6 +768,7 @@ function Read-SPFarm (){
   {
       Add-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
   }
+
   $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$ConfigurationData.NonNodeData.PassPhrase -AsPlainText -Force));`r`n"
   
   $currentServer = Get-SPServer $ServerName
@@ -746,11 +780,12 @@ function Read-SPFarm (){
 
   if($spMajorVersion -ge 16)
   {
-      $results.Add("ServerRole", $currentServer.Role)
+      $results.Add("ServerRole", "`$Node.ServerRole")
   }
   $results = Repair-Credentials -results $results
   $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
   $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
   $Script:dscConfigContent += $currentBlock
   $Script:dscConfigContent += "        }`r`n"
 
@@ -951,7 +986,7 @@ function Repair-Credentials($results)
 
       if($PSVersionTable.PSVersion.Major -ge 5)
       {
-          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_"))
+          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
       }
       return $results
   }
@@ -1120,30 +1155,33 @@ function Read-SPSitesAndWebs (){
           $results = Repair-Credentials -results $results
 
           $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+          $currentBlock = ""
           if($null -ne $ownerAlias)
           {            
               $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-              $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+          
           }
-          else
-          {
-              $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          }
+
           if($results.ContainsKey("SecondaryOwnerAlias"))
           {
               $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
               if($null -ne $secondaryOwner)
               {            
                   $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
-                  $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
               }
               else {
                   Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
               }
           }
-          
+          $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+          if($null -ne $results.SecondaryOwnerAlias -and $results.SecondaryOwnerAlias.StartsWith("`$"))
+          {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
+          }
+          if($null -ne $results.OwnerAlias -and $results.OwnerAlias.StartsWith("`$"))
+          {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+          }
           $Script:dscConfigContent += $currentBlock
           $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
           $Script:dscConfigContent += "        }`r`n"
@@ -1497,8 +1535,10 @@ function Read-SPServiceInstance($Servers)
       $total = $serviceInstancesOnCurrentServer.Length
       foreach($serviceInstance in $serviceInstancesOnCurrentServer)
       {
+
           $serviceTypeName = $serviceInstance.TypeName
           Write-Host "    -> Scanning instance [$i/$total] {$serviceTypeName}"
+
           if($serviceInstance.Status -eq "Online")
           {
               $ensureValue = "Present"
@@ -1507,9 +1547,14 @@ function Read-SPServiceInstance($Servers)
           {
               $ensureValue = "Absent"
           }
-          $currentService = @{Name = $serviceTypeName; Ensure = $ensureValue}
-          $serviceStatuses += $currentService
-          if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceTypeName))
+          
+          $currentService = @{Name = $serviceInstance.TypeName; Ensure = $ensureValue}
+
+          if($serviceInstance.TypeName -ne "Distributed Cache" -and $serviceInstance.TypeName -ne "User Profile Synchronization Service")
+          {
+            $serviceStatuses += $currentService
+          }
+          if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
           {              
               $servicesMasterList += $serviceTypeName
               Write-Verbose $serviceTypeName
@@ -1540,24 +1585,8 @@ function Read-SPServiceInstance($Servers)
                   }
               }
           }
-          $i++
-      }
-      $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-      $Script:dscConfigContent += "        {`r`n"
-      $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-      $Script:dscConfigContent += "            {`r`n"
-      $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-      $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-      if($PSVersionTable.PSVersion.Major -lt 5)
-      {
-          $Script:dscConfigContent += "                InstallAccount = " + "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-      }
-      else
-      {
-          $Script:dscConfigContent += "                PSDscRunAsCredential = " + "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-      }
-      $Script:dscConfigContent += "            }`r`n"
-      $Script:dscConfigContent += "        }`r`n"
+        }      
+
       Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
   }
 }
@@ -3229,18 +3258,24 @@ function Read-SPHealthAnalyzerRuleState
   {
       $params.Name = $healthRule.Title
       $results = Get-TargetResource @params
-      if($null -ne $results)
+
+      if($null -ne $results.Schedule)
       {
         $Script:dscConfigContent += "        SPHealthAnalyzerRuleState " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results = Get-TargetResource @params
+        $Script:dscConfigContent += "        {`r`n"      
+
         if($results.Get_Item("Schedule") -eq "On Demand")
         {
             $results.Schedule = "OnDemandOnly"    
         }
+        
         $results = Repair-Credentials -results $results
         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
         $Script:dscConfigContent += "        }`r`n"
+      }
+      else {
+          $ruleName = $healthRule.Title
+          Write-Warning "Could not extract information for rule {$ruleName}. There may be some missing service applications."
       }
   }
 }
