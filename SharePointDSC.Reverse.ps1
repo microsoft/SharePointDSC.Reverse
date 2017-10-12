@@ -18,7 +18,9 @@
 
 * Fixed '@' in Account names;
 * Fixed secondary servers issues;
-* ServerRole for SharePoint 2016 is now in ConfigurationData;
+* ServerRole for SharePoint 2016 is now in Configuration Data;
+* Fix for SPSite Owners and Secondary Owners credentials;
+* Fix for Distributed Cache service instance in Configuration Data;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
