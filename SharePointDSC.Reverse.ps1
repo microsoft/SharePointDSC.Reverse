@@ -3318,7 +3318,7 @@ function Read-SPFarmSolution
 
 function Save-SPFarmsolution($Path)
 {
-  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are location (local path or Network Share);"
+  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are located (local path or Network Share);"
   $solutions = Get-SPSolution
   $farm = Get-SPFarm
   foreach($solution in $solutions)
