@@ -112,10 +112,18 @@ function Orchestrator
   Write-Host "Scanning Patch Levels..." -BackgroundColor DarkGreen -ForegroundColor White
   Read-SPProductVersions
 
-  $Script:configName = "SharePointFarm"
+  $Script:configName = "SP-Farm.DSC"
   if($Standalone)
   {
-      $Script:configName = "SharePointStandalone"
+      $Script:configName = "SP-Standalone"
+  }
+  if($Script:ExtractionModeValue -eq 3)
+  {
+      $Script:configName += "-Full"
+  }
+  elseif($Script:ExtractionModeValue -eq 1)
+  {
+      $Script:configName += "-Lite"
   }
   $Script:dscConfigContent += "Configuration $Script:configName`r`n"
   $Script:dscConfigContent += "{`r`n"
@@ -489,7 +497,10 @@ function Orchestrator
   Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
   Set-ObtainRequiredCredentials
 
-  $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+  if(!$Azure)
+  {
+    $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+  }
 }
 
 function Test-Prerequisites
@@ -4256,6 +4267,7 @@ function Get-SPReverseDSC()
     $azureDeployScriptPath = $OutputDSCPath + "DeployToAzure.ps1"
     $configurationDataContent = Get-ConfigurationDataContent
     $deployScriptContent = "Login-AzureRMAccount`r`n`$configData = " + $configurationDataContent + "`r`n" + `
+        "Import-AzureRmAutomationDscConfiguration -SourcePath (Get-Item '.\" + ($Script:configName + ".ps1") + "').FullName -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -Verbose -Published -Force`r`n"  + `
         "Start-AzureRmAutomationDscCompilationJob -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -ConfigurationName `"" + $Script:configName + "`" -ConfigurationData `$configData"
     $deployScriptContent | Out-File $azureDeployScriptPath
   }
