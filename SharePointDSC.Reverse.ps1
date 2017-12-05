@@ -2230,31 +2230,32 @@ function Read-SPTimerJobState
   $spTimers = Get-SPTimerJob
   foreach($timer in $spTimers)
   {
-      if($timer -ne $null)
+      if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
       {
-          $params.TypeName = $timer.Name
-          if($null -ne $timer.WebApplication)
-          {
-              $params.WebAppUrl = $timer.WebApplication.Url;
-          }
-          else {
-              $params.WebAppUrl = "N/A"
-          }
+        $params.TypeName = $timer.TypeName
+        if($null -ne $timer.WebApplication)
+        {
+            $params.WebAppUrl = $timer.WebApplication.Url;
+        }
+        else
+        {
+            $params.WebAppUrl = "N/A";
+        }
 
-          <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
-          $Script:dscConfigContent += "<#`r`n"
-          $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
-          $Script:dscConfigContent += "        {`r`n"
-          $results = Get-TargetResource @params
+        <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
+        $Script:dscConfigContent += "<#`r`n"
+        $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"
+        $results = Get-TargetResource @params
 
-          if($results.Contains("InstallAccount"))
-          {
-              $results.Remove("InstallAccount")
-          }
-          $results = Repair-Credentials -results $results
-          $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          $Script:dscConfigContent += "        }`r`n"
-          $Script:dscConfigContent += "#>`r`n"
+        if($results.Contains("InstallAccount"))
+        {
+            $results.Remove("InstallAccount")
+        }
+        $results = Repair-Credentials -results $results
+        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $Script:dscConfigContent += "        }`r`n"
+        $Script:dscConfigContent += "#>`r`n"          
       }
   }    
 }
@@ -3318,7 +3319,7 @@ function Read-SPFarmSolution
 
 function Save-SPFarmsolution($Path)
 {
-  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are location (local path or Network Share);"
+  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are located (local path or Network Share);"
   $solutions = Get-SPSolution
   $farm = Get-SPFarm
   foreach($solution in $solutions)
