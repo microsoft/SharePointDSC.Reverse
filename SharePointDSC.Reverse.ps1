@@ -16,14 +16,10 @@
 
 .RELEASENOTES
 
-* Fixed '@' in Account names;
-* Fixed secondary servers issues;
-* ServerRole for SharePoint 2016 is now in Configuration Data;
-* Fix for SPSite Owners and Secondary Owners credentials;
-* Fix for Distributed Cache service instance in Configuration Data;
+* Aligned with SharePointDSC 2.0.0.0
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.0"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.1"},@{ModuleName="SharePointDSC";ModuleVersion="2.0.0.0"}
 
 <# 
 
@@ -52,7 +48,7 @@ $Script:dscConfigContent = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "1.9.0.0"
+$SPDSCVersion = "2.0.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -786,10 +782,17 @@ function Read-SPFarm (){
   {
       $results.Add("ServerRole", "`$Node.ServerRole")
   }
+  else 
+  {
+      $results.Remove("ServerRole")
+  }
   $results = Repair-Credentials -results $results
   $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
   $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
+  if($spMajorVersion -ge 16)
+  {
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
+  }
   $Script:dscConfigContent += $currentBlock
   $Script:dscConfigContent += "        }`r`n"
 
@@ -1574,6 +1577,10 @@ function Read-SPServiceInstance($Servers)
                   $params = Get-DSCFakeParameters -ModulePath $module
                   $params.Ensure = $ensureValue
                   $params.FarmAccount = $Global:spFarmAccount
+                  if($null -eq $params.InstallAccount)
+                  {
+                      $params.Remove("InstallAccount")
+                  }
                   $results = Get-TargetResource @params
                   if($ensureValue -eq "Present")
                   {            
@@ -1583,6 +1590,10 @@ function Read-SPServiceInstance($Servers)
                       if($results.Contains("InstallAccount"))
                       {
                           $results.Remove("InstallAccount")
+                      }
+                      if(!$results.Contains("FarmAccount"))
+                      {
+                          $results.Add("FarmAccount", $Global:spFarmAccount)
                       }
                       $results = Repair-Credentials -results $results
                       $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1868,6 +1879,12 @@ function Read-UserProfileServiceapplication ($modulePath, $params){
               $params.Name = $serviceName
               $Script:dscConfigContent += "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
               $Script:dscConfigContent += "        {`r`n"
+
+              if($null -eq $params.InstallAccount)
+              {
+                  $params.Remove("InstallAccount")
+              }
+
               $results = Get-TargetResource @params
               if($results.Contains("MySiteHostLocation") -and $results.Get_Item("MySiteHostLocation") -eq "*")
               {
@@ -3663,8 +3680,6 @@ function Read-SPUserProfileSyncConnection
               {
                   $Script:dscConfigContent += "        SPUserProfileSyncConnection  " + [System.Guid]::NewGuid().ToString() + "`r`n"
                   $Script:dscConfigContent += "        {`r`n"
-                  
-
                   $results = Repair-Credentials -results $results
                   $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                   $Script:dscConfigContent += "        }`r`n"    
@@ -4109,27 +4124,28 @@ function Read-SPRemoteFarmTrust
 
 function Read-SPAlternateUrl
 {
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAlternateUrl\MSFT_SPAlternateUrl.psm1")
-  Import-Module $module
-  $params = Get-DSCFakeParameters -ModulePath $module
-  $alternateUrls = Get-SPAlternateUrl
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAlternateUrl\MSFT_SPAlternateUrl.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
 
-  foreach($alternateUrl in $alternateUrls)
-  {
-      $webAppUrl = $alternateUrl.Uri.AbsoluteUri
-      $wa = Get-SPWebapplication $webAppUrl
-      if($null -ne $wa)
-      {
-        $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.WebAppUrl = $alternateUrl.Uri.AbsoluteUri
-        $params.Zone = $alternateUrl.UrlZone
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"  
-      }
-  }
+    $webApps = Get-SPWebApplication
+    foreach($webApp in $webApps)
+    {
+        $alternateUrls = Get-SPAlternateUrl -WebApplication $webApp
+
+        foreach($alternateUrl in $alternateUrls)
+        {
+            $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.WebAppName = $webApp.Name
+            $params.Zone = $alternateUrl.UrlZone
+            $params.Url = $alternateUrl.IncomingUrl
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+    }
 }
 
 <## This function sets the settings for the Local Configuration Manager (LCM) component on the server we will be configuring using our resulting DSC Configuration script. The LCM component is the one responsible for orchestrating all DSC configuration related activities and processes on a server. This method specifies settings telling the LCM to not hesitate rebooting the server we are configurating automatically if it requires a reboot (i.e. During the SharePoint Prerequisites installation). Setting this value helps reduce the amount of manual interaction that is required to automate the configuration of our SharePoint farm using our resulting DSC Configuration script. #>
