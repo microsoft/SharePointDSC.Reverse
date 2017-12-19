@@ -16,14 +16,10 @@
 
 .RELEASENOTES
 
-* Fixed '@' in Account names;
-* Fixed secondary servers issues;
-* ServerRole for SharePoint 2016 is now in Configuration Data;
-* Fix for SPSite Owners and Secondary Owners credentials;
-* Fix for Distributed Cache service instance in Configuration Data;
+* Aligned with SharePointDSC 2.0.0.0
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.1.1"},@{ModuleName="SharePointDSC";ModuleVersion="1.9.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.1"},@{ModuleName="SharePointDSC";ModuleVersion="2.0.0.0"}
 
 <# 
 
@@ -38,7 +34,8 @@ param(
     [switch]$Standalone,
     [Boolean]$Confirm = $true,
     [String]$OutputFile = $null,
-    [switch]$SkipSitesAndWebs = $false)
+    [switch]$SkipSitesAndWebs = $false,
+    [switch]$Azure = $false)
 
 <## Script Settings #>
 $VerbosePreference = "SilentlyContinue"
@@ -48,9 +45,10 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
+$Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "1.9.0.0"
+$SPDSCVersion = "2.0.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -110,12 +108,20 @@ function Orchestrator
   Write-Host "Scanning Patch Levels..." -BackgroundColor DarkGreen -ForegroundColor White
   Read-SPProductVersions
 
-  $configName = "SharePointFarm"
+  $Script:configName = "SP-Farm.DSC"
   if($Standalone)
   {
-      $configName = "SharePointStandalone"
+      $Script:configName = "SP-Standalone"
   }
-  $Script:dscConfigContent += "Configuration $configName`r`n"
+  if($Script:ExtractionModeValue -eq 3)
+  {
+      $Script:configName += "-Full"
+  }
+  elseif($Script:ExtractionModeValue -eq 1)
+  {
+      $Script:configName += "-Lite"
+  }
+  $Script:dscConfigContent += "Configuration $Script:configName`r`n"
   $Script:dscConfigContent += "{`r`n"
   $Script:dscConfigContent += "    <# Credentials #>`r`n"
 
@@ -136,15 +142,6 @@ function Orchestrator
           if($serverNumber -eq 1)
           {
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
-
-              Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPInstallPrereqs
-    
-              Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPInstall
-    
-              Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarm -ServerName $spServer.Address -RunCentralAdmin $true
           }
           elseif(!$nodeLoopDone){
               $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
@@ -496,7 +493,10 @@ function Orchestrator
   Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
   Set-ObtainRequiredCredentials
 
-  $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+  if(!$Azure)
+  {
+    $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+  }
 }
 
 function Test-Prerequisites
@@ -782,10 +782,17 @@ function Read-SPFarm (){
   {
       $results.Add("ServerRole", "`$Node.ServerRole")
   }
+  else 
+  {
+      $results.Remove("ServerRole")
+  }
   $results = Repair-Credentials -results $results
   $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
   $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
+  if($spMajorVersion -ge 16)
+  {
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
+  }
   $Script:dscConfigContent += $currentBlock
   $Script:dscConfigContent += "        }`r`n"
 
@@ -1075,233 +1082,234 @@ function Read-SPSitesAndWebs (){
 
   $i = 1
   $total = $spSites.Length
-  foreach($spSite in $spSites)
-  {
-      if(!$spSite.IsSiteMaster)
-      {          
-        $siteTitle = $spSite.RootWeb.Title
-        $siteUrl = $spSite.Url
-        Write-Host "Scanning SPSite [$i/$total] {$siteUrl}"
-        Read-SPSite $siteUrl
-        if($Script:ExtractionModeValue -eq 3)
-        {
-          $dependsOnItems = @("[SPWebApplication]" + $spSite.WebApplication.Name.Replace(" ", ""))
-          $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSite\MSFT_SPSite.psm1")
-          Import-Module $module
-          $params = Get-DSCFakeParameters -ModulePath $module
-          $siteGuid = [System.Guid]::NewGuid().toString()
-          $siteTitle = $spSite.RootWeb.Title
-          if($siteTitle -eq $null)
-          {
-              $siteTitle = "SiteCollection"
-          }
-          $Script:dscConfigContent += "        SPSite " + $siteGuid + "`r`n"
-          $Script:dscConfigContent += "        {`r`n"
-          $params.Url = $spSite.Url
-          $results = Get-TargetResource @params
-
-          <# WA - Somehow the WebTemplateID returned for App Catalog is 18, but the template is APPCATALOG#0 #>
-          if($results.Template -eq "APPCATALOG#18")
-          {
-              $results.Template = "APPCATALOG#0"
-          }
-          <# If the current Quota ID is 0, it means no quota templates were used. Remove param in that case. #>
-          if($spSite.Quota.QuotaID -eq 0)
-          {
-              $results.Remove("QuotaTemplate")
-          }
-          else {
-            $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
-            if($null -ne $quotaTemplateName -and $null -ne $quotaTemplateName.Name)
+    foreach($spSite in $spSites)
+    {
+        if(!$spSite.IsSiteMaster)
+        {          
+            $siteTitle = $spSite.RootWeb.Title
+            $siteUrl = $spSite.Url
+            Write-Host "Scanning SPSite [$i/$total] {$siteUrl}"
+            Read-SPSite $siteUrl
+            
+            $dependsOnItems = @("[SPWebApplication]" + $spSite.WebApplication.Name.Replace(" ", ""))
+            $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSite\MSFT_SPSite.psm1")
+            Import-Module $module
+            $params = Get-DSCFakeParameters -ModulePath $module
+            $siteGuid = [System.Guid]::NewGuid().toString()
+            $siteTitle = $spSite.RootWeb.Title
+            if($siteTitle -eq $null)
             {
-                if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
-                {
-                    $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
-                }
-            }       
-            else {
+                $siteTitle = "SiteCollection"
+            }
+            $Script:dscConfigContent += "        SPSite " + $siteGuid + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.Url = $spSite.Url
+            $results = Get-TargetResource @params
+
+            <# WA - Somehow the WebTemplateID returned for App Catalog is 18, but the template is APPCATALOG#0 #>
+            if($results.Template -eq "APPCATALOG#18")
+            {
+                $results.Template = "APPCATALOG#0"
+            }
+            <# If the current Quota ID is 0, it means no quota templates were used. Remove param in that case. #>
+            if($spSite.Quota.QuotaID -eq 0)
+            {
                 $results.Remove("QuotaTemplate")
-            }     
-          }
-          if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
-          {
-              $results.Remove("SecondaryOwnerAlias")
-          }
-          if($null -eq $results.Get_Item("SecondaryEmail"))
-          {
-              $results.Remove("SecondaryEmail")
-          }
-          if($null -eq $results.Get_Item("OwnerEmail") -or "" -eq $results.Get_Item("OwnerEmail"))
-          {
-              $results.Remove("OwnerEmail")
-          }
-          if($null -eq $results.Get_Item("HostHeaderWebApplication"))
-          {
-              $results.Remove("HostHeaderWebApplication")
-          }
-          if($null -eq $results.Get_Item("Name") -or "" -eq $results.Get_Item("Name"))
-          {
-              $results.Remove("Name")
-          }
-          if($null -eq $results.Get_Item("Description") -or "" -eq $results.Get_Item("Description"))
-          {
-              $results.Remove("Description")
-          }
-          else
-          {
-              $results.Description = $results.Description.Replace("`"", "'")
-          }
-          $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
-          $results = Repair-Credentials -results $results
+            }
+            else 
+            {
+                $quotaTemplateName = $sc.QuotaTemplates | Where-Object{$_.QuotaId -eq $spsite.Quota.QuotaID}
+                if($null -ne $quotaTemplateName -and $null -ne $quotaTemplateName.Name)
+                {
+                    if($Script:DH_SPQUOTATEMPLATE.ContainsKey($quotaTemplateName.Name))
+                    {
+                        $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
+                    }
+                }       
+                else 
+                {
+                    $results.Remove("QuotaTemplate")
+                }     
+            }
+            if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
+            {
+                $results.Remove("SecondaryOwnerAlias")
+            }
+            if($null -eq $results.Get_Item("SecondaryEmail"))
+            {
+                $results.Remove("SecondaryEmail")
+            }
+            if($null -eq $results.Get_Item("OwnerEmail") -or "" -eq $results.Get_Item("OwnerEmail"))
+            {
+                $results.Remove("OwnerEmail")
+            }
+            if($null -eq $results.Get_Item("HostHeaderWebApplication"))
+            {
+                $results.Remove("HostHeaderWebApplication")
+            }
+            if($null -eq $results.Get_Item("Name") -or "" -eq $results.Get_Item("Name"))
+            {
+                $results.Remove("Name")
+            }
+            if($null -eq $results.Get_Item("Description") -or "" -eq $results.Get_Item("Description"))
+            {
+                $results.Remove("Description")
+            }
+            else
+            {
+                $results.Description = $results.Description.Replace("`"", "'")
+            }
+            $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
+            $results = Repair-Credentials -results $results
 
-          $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
-          $currentBlock = ""
-          if($null -ne $ownerAlias)
-          {            
-              $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
-          
-          }
+            $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+            $currentBlock = ""
+            if($null -ne $ownerAlias)
+            {            
+                $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"          
+            }
 
-          if($results.ContainsKey("SecondaryOwnerAlias"))
-          {
-              $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
-              if($null -ne $secondaryOwner)
-              {            
-                  $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
-              }
-              else {
-                  Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
-              }
-          }
-          $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          if($null -ne $results.SecondaryOwnerAlias -and $results.SecondaryOwnerAlias.StartsWith("`$"))
-          {
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
-          }
-          if($null -ne $results.OwnerAlias -and $results.OwnerAlias.StartsWith("`$"))
-          {
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
-          }
-          $Script:dscConfigContent += $currentBlock
-          $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
-          $Script:dscConfigContent += "        }`r`n"
+            if($results.ContainsKey("SecondaryOwnerAlias"))
+            {
+                $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
+                if($null -ne $secondaryOwner)
+                {            
+                    $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
+                }
+                else 
+                {
+                    Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
+                }
+            }
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            if($null -ne $results.SecondaryOwnerAlias -and $results.SecondaryOwnerAlias.StartsWith("`$"))
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
+            }
+            if($null -ne $results.OwnerAlias -and $results.OwnerAlias.StartsWith("`$"))
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "OwnerAlias"
+            }
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "            DependsOn =  " + $dependsOnClause + "`r`n"
+            $Script:dscConfigContent += "        }`r`n"
 
-          <# Nik20170112 - There are restrictions preventing this setting from being applied if the PsDscRunAsCredential parameter is not used.
+            <# Nik20170112 - There are restrictions preventing this setting from being applied if the PsDscRunAsCredential parameter is not used.
                           Since this is only available in WMF 5, we check to see if the node farm we are extracting the configuration from is
                           running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
-          if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
-          {
-              Read-SPDesignerSettings($spSite.Url, "SiteCollection")
-          }
-          if($Script:ExtractionModeValue -eq 3)
-          {
-              $webs = Get-SPWeb -Limit All -Site $spsite
-              $j = 1
-              $totalWebs = $webs.Length
-              foreach($spweb in $webs)
-              {
-                  $webUrl = $spweb.Url
-                  Write-Host "    -> Scanning Web [$j/$totalWebs] {$webUrl}"
-                  $moduleWeb = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPWeb\MSFT_SPWeb.psm1")
-                  Import-Module $moduleWeb
-                  $paramsWeb = Get-DSCFakeParameters -ModulePath $moduleWeb
-                  $paramsWeb.Url = $webUrl          
-                  $resultsWeb = Get-TargetResource @paramsWeb
-                  $Script:dscConfigContent += "        SPWeb " + [System.Guid]::NewGuid().toString() + "`r`n"
-                  $Script:dscConfigContent += "        {`r`n"
-                  $resultsWeb = Repair-Credentials -results $resultsWeb
-                  $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsWeb -ModulePath $moduleWeb
-                  $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
-                  $Script:dscConfigContent += "        }`r`n"
+            if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
+            {
+                Read-SPDesignerSettings($spSite.Url, "SiteCollection")
+            }
+            if($Script:ExtractionModeValue -eq 3)
+            {
+                $webs = Get-SPWeb -Limit All -Site $spsite
+                $j = 1
+                $totalWebs = $webs.Length
+                foreach($spweb in $webs)
+                {
+                    $webUrl = $spweb.Url
+                    Write-Host "    -> Scanning Web [$j/$totalWebs] {$webUrl}"
+                    $moduleWeb = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPWeb\MSFT_SPWeb.psm1")
+                    Import-Module $moduleWeb
+                    $paramsWeb = Get-DSCFakeParameters -ModulePath $moduleWeb
+                    $paramsWeb.Url = $webUrl          
+                    $resultsWeb = Get-TargetResource @paramsWeb
+                    $Script:dscConfigContent += "        SPWeb " + [System.Guid]::NewGuid().toString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $resultsWeb = Repair-Credentials -results $resultsWeb
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsWeb -ModulePath $moduleWeb
+                    $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
+                    $Script:dscConfigContent += "        }`r`n"
 
-                  <# SPWeb Feature Section #>
-                  if($Script:ExtractionModeValue -eq 3)
-                  {
-                      $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-                      $versionFilter = $spMajorVersion.ToString() + "*"
-                      $webFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Web" -and $_.Version -like $versionFilter}
-                      $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
-                      Import-Module $moduleFeature
-                      $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
+                    <# SPWeb Feature Section #>
+                    if($Script:ExtractionModeValue -eq 3)
+                    {
+                        $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+                        $versionFilter = $spMajorVersion.ToString() + "*"
+                        $webFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Web" -and $_.Version -like $versionFilter}
+                        $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
+                        Import-Module $moduleFeature
+                        $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
 
-                      $k = 0
-                      $totalWebFeat = $webFeatures.Length
-                      foreach($webFeature in $webFeatures)
-                      {
-                          $webFeatureName = $webFeature.DisplayName
-                          Write-Host "        ---> Scanning Web Feature [$k/$totalWebFeat] {$webFeatureName}"
+                        $k = 0
+                        $totalWebFeat = $webFeatures.Length
+                        foreach($webFeature in $webFeatures)
+                        {
+                            $webFeatureName = $webFeature.DisplayName
+                            Write-Host "        ---> Scanning Web Feature [$k/$totalWebFeat] {$webFeatureName}"
 
-                          $paramsFeature.Name = $webFeatureName
-                          $paramsFeature.FeatureScope = "Web"
-                          $paramsFeature.Url = $spWeb.Url
-                          $resultsFeature = Get-TargetResource @paramsFeature
+                            $paramsFeature.Name = $webFeatureName
+                            $paramsFeature.FeatureScope = "Web"
+                            $paramsFeature.Url = $spWeb.Url
+                            $resultsFeature = Get-TargetResource @paramsFeature
 
-                          if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
-                          {
-                              $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                              $Script:dscConfigContent += "        {`r`n"
+                            if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
+                            {
+                                $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                $Script:dscConfigContent += "        {`r`n"
                   
-                              <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
-                              https://github.com/PowerShell/SharePointDsc/issues/481 #>
-                              if($resultsFeature.ContainsKey("InstalAccount"))
-                              {
-                                  $resultsFeature.Remove("InstalAccount")
-                              }
-                              $resultsFeature = Repair-Credentials -results $resultsFeature
-                              $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
-                              $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
-                              $Script:dscConfigContent += "        }`r`n"
-                          }
-                          $k++
-                      }
-                  }
-                  $j++
-              }
-          }
-          <# SPSite Feature Section #>
-          if($Script:ExtractionModeValue -eq 3)
-          {
-              $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-              $versionFilter = $spMajorVersion.ToString() + "*"
-              $siteFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Site" -and $_.Version -like $versionFilter}
-              $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
-              Import-Module $moduleFeature
-              $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
+                                <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
+                                https://github.com/PowerShell/SharePointDsc/issues/481 #>
+                                if($resultsFeature.ContainsKey("InstalAccount"))
+                                {
+                                    $resultsFeature.Remove("InstalAccount")
+                                }
+                                $resultsFeature = Repair-Credentials -results $resultsFeature
+                                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                                $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
+                                $Script:dscConfigContent += "        }`r`n"
+                            }
+                            $k++
+                        }
+                    }
+                    $j++
+                }
+            }
+            <# SPSite Feature Section #>
+            if($Script:ExtractionModeValue -eq 3)
+            {
+                $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+                $versionFilter = $spMajorVersion.ToString() + "*"
+                $siteFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Site" -and $_.Version -like $versionFilter}
+                $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
+                Import-Module $moduleFeature
+                $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
 
-              $k = 0
-              $totalSiteFeat = $siteFeatures.Length
-              foreach($siteFeature in $siteFeatures)
-              {
-                  $siteFeatName = $siteFeature.DisplayName
-                  Write-Host "    -> Scanning SPSite feature [$k/$totalSiteFeat] {$siteFeatName}"
+                $k = 0
+                $totalSiteFeat = $siteFeatures.Length
+                foreach($siteFeature in $siteFeatures)
+                {
+                    $siteFeatName = $siteFeature.DisplayName
+                    Write-Host "    -> Scanning SPSite feature [$k/$totalSiteFeat] {$siteFeatName}"
 
-                  $paramsFeature.Name = $siteFeatName
-                  $paramsFeature.FeatureScope = "Site"
-                  $paramsFeature.Url = $spSite.Url
-                  $resultsFeature = Get-TargetResource @paramsFeature
+                    $paramsFeature.Name = $siteFeatName
+                    $paramsFeature.FeatureScope = "Site"
+                    $paramsFeature.Url = $spSite.Url
+                    $resultsFeature = Get-TargetResource @paramsFeature
 
-                  if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
-                  {
-                      $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                      $Script:dscConfigContent += "        {`r`n"
+                    if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
+                    {
+                        $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
               
-                      <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
-                      https://github.com/PowerShell/SharePointDsc/issues/481 #>                    
-                      if($resultsFeature.ContainsKey("InstalAccount"))
-                      {
-                          $resultsFeature.Remove("InstalAccount")
-                      }
-                      $resultsFeature = Repair-Credentials -results $resultsFeature
-                      $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
-                      $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
-                      $Script:dscConfigContent += "        }`r`n"
-                  }
-                  $k++
-              }
-          }
-          }
+                        <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
+                        https://github.com/PowerShell/SharePointDsc/issues/481 #>                    
+                        if($resultsFeature.ContainsKey("InstalAccount"))
+                        {
+                            $resultsFeature.Remove("InstalAccount")
+                        }
+                        $resultsFeature = Repair-Credentials -results $resultsFeature
+                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                        $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                    $k++
+                }
+            }               
+        }
         $i++
-  }
+    }
 }
 
 function Read-SPSite($spSiteUrl)
@@ -1569,6 +1577,10 @@ function Read-SPServiceInstance($Servers)
                   $params = Get-DSCFakeParameters -ModulePath $module
                   $params.Ensure = $ensureValue
                   $params.FarmAccount = $Global:spFarmAccount
+                  if($null -eq $params.InstallAccount)
+                  {
+                      $params.Remove("InstallAccount")
+                  }
                   $results = Get-TargetResource @params
                   if($ensureValue -eq "Present")
                   {            
@@ -1579,12 +1591,17 @@ function Read-SPServiceInstance($Servers)
                       {
                           $results.Remove("InstallAccount")
                       }
+                      if(!$results.Contains("FarmAccount"))
+                      {
+                          $results.Add("FarmAccount", $Global:spFarmAccount)
+                      }
                       $results = Repair-Credentials -results $results
                       $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                       $Script:dscConfigContent += "        }`r`n"
                   }
               }
           }
+          $i++
         }      
 
       Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
@@ -1862,6 +1879,12 @@ function Read-UserProfileServiceapplication ($modulePath, $params){
               $params.Name = $serviceName
               $Script:dscConfigContent += "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
               $Script:dscConfigContent += "        {`r`n"
+
+              if($null -eq $params.InstallAccount)
+              {
+                  $params.Remove("InstallAccount")
+              }
+
               $results = Get-TargetResource @params
               if($results.Contains("MySiteHostLocation") -and $results.Get_Item("MySiteHostLocation") -eq "*")
               {
@@ -2224,31 +2247,32 @@ function Read-SPTimerJobState
   $spTimers = Get-SPTimerJob
   foreach($timer in $spTimers)
   {
-      if($timer -ne $null)
+      if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
       {
-          $params.TypeName = $timer.Name
-          if($null -ne $timer.WebApplication)
-          {
-              $params.WebAppUrl = $timer.WebApplication.Url;
-          }
-          else {
-              $params.WebAppUrl = "N/A"
-          }
+        $params.TypeName = $timer.TypeName
+        if($null -ne $timer.WebApplication)
+        {
+            $params.WebAppUrl = $timer.WebApplication.Url;
+        }
+        else
+        {
+            $params.WebAppUrl = "N/A";
+        }
 
-          <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
-          $Script:dscConfigContent += "<#`r`n"
-          $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
-          $Script:dscConfigContent += "        {`r`n"
-          $results = Get-TargetResource @params
+        <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
+        $Script:dscConfigContent += "<#`r`n"
+        $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"
+        $results = Get-TargetResource @params
 
-          if($results.Contains("InstallAccount"))
-          {
-              $results.Remove("InstallAccount")
-          }
-          $results = Repair-Credentials -results $results
-          $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-          $Script:dscConfigContent += "        }`r`n"
-          $Script:dscConfigContent += "#>`r`n"
+        if($results.Contains("InstallAccount"))
+        {
+            $results.Remove("InstallAccount")
+        }
+        $results = Repair-Credentials -results $results
+        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $Script:dscConfigContent += "        }`r`n"
+        $Script:dscConfigContent += "#>`r`n"          
       }
   }    
 }
@@ -3312,7 +3336,7 @@ function Read-SPFarmSolution
 
 function Save-SPFarmsolution($Path)
 {
-  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are location (local path or Network Share);"
+  Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "SPSolutionPath" -Value $Path -Description "Path where the custom solutions (.wsp) to be installed on the SharePoint Farm are located (local path or Network Share);"
   $solutions = Get-SPSolution
   $farm = Get-SPFarm
   foreach($solution in $solutions)
@@ -3656,8 +3680,6 @@ function Read-SPUserProfileSyncConnection
               {
                   $Script:dscConfigContent += "        SPUserProfileSyncConnection  " + [System.Guid]::NewGuid().ToString() + "`r`n"
                   $Script:dscConfigContent += "        {`r`n"
-                  
-
                   $results = Repair-Credentials -results $results
                   $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                   $Script:dscConfigContent += "        }`r`n"    
@@ -4102,27 +4124,28 @@ function Read-SPRemoteFarmTrust
 
 function Read-SPAlternateUrl
 {
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAlternateUrl\MSFT_SPAlternateUrl.psm1")
-  Import-Module $module
-  $params = Get-DSCFakeParameters -ModulePath $module
-  $alternateUrls = Get-SPAlternateUrl
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAlternateUrl\MSFT_SPAlternateUrl.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
 
-  foreach($alternateUrl in $alternateUrls)
-  {
-      $webAppUrl = $alternateUrl.Uri.AbsoluteUri
-      $wa = Get-SPWebapplication $webAppUrl
-      if($null -ne $wa)
-      {
-        $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.WebAppUrl = $alternateUrl.Uri.AbsoluteUri
-        $params.Zone = $alternateUrl.UrlZone
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"  
-      }
-  }
+    $webApps = Get-SPWebApplication
+    foreach($webApp in $webApps)
+    {
+        $alternateUrls = Get-SPAlternateUrl -WebApplication $webApp
+
+        foreach($alternateUrl in $alternateUrls)
+        {
+            $Script:dscConfigContent += "        SPAlternateUrl " + [System.Guid]::NewGuid().toString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.WebAppName = $webApp.Name
+            $params.Zone = $alternateUrl.UrlZone
+            $params.Url = $alternateUrl.IncomingUrl
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+    }
 }
 
 <## This function sets the settings for the Local Configuration Manager (LCM) component on the server we will be configuring using our resulting DSC Configuration script. The LCM component is the one responsible for orchestrating all DSC configuration related activities and processes on a server. This method specifies settings telling the LCM to not hesitate rebooting the server we are configurating automatically if it requires a reboot (i.e. During the SharePoint Prerequisites installation). Setting this value helps reduce the amount of manual interaction that is required to automate the configuration of our SharePoint farm using our resulting DSC Configuration script. #>
@@ -4232,9 +4255,8 @@ function Get-SPReverseDSC()
   <# Now that we have acquired the output path, save all custom solutions (.wsp) in that directory; #>
   Save-SPFarmsolution($OutputDSCPath)
 
-  <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>
-  $outputDSCFile = $OutputDSCPath + $fileName
-  $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
+  <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>  
+  $outputDSCFile = $OutputDSCPath + $fileName  
   $Script:dscConfigContent | Out-File $outputDSCFile
 
   <# Add the list of all user accounts detected to the configurationdata #>
@@ -4249,7 +4271,23 @@ function Get-SPReverseDSC()
       Add-ConfigurationDataEntry -Node "NonNodeData" -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
   }    
 
-  New-ConfigurationDataDocument -Path $outputConfigurationData
+  if(!$Azure)
+  {
+    $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
+    New-ConfigurationDataDocument -Path $outputConfigurationData
+  }
+  else 
+  {
+    $resGroupName = Read-Host "Destination Resource Group Name"
+    $automationAccountName = Read-Host "Destination Automation Account Name"
+    
+    $azureDeployScriptPath = $OutputDSCPath + "DeployToAzure.ps1"
+    $configurationDataContent = Get-ConfigurationDataContent
+    $deployScriptContent = "Login-AzureRMAccount`r`n`$configData = " + $configurationDataContent + "`r`n" + `
+        "Import-AzureRmAutomationDscConfiguration -SourcePath (Get-Item '.\" + ($Script:configName + ".ps1") + "').FullName -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -Verbose -Published -Force`r`n"  + `
+        "Start-AzureRmAutomationDscCompilationJob -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -ConfigurationName `"" + $Script:configName + "`" -ConfigurationData `$configData"
+    $deployScriptContent | Out-File $azureDeployScriptPath
+  }
   
   <## Wait a second, then open our $outputDSCPath in Windows Explorer so we can review the glorious output. ##>
   Start-Sleep 1
@@ -4259,17 +4297,26 @@ function Get-SPReverseDSC()
 <## This function defines variables of type Credential for the resulting DSC Configuraton Script. Each variable declared in this method will result in the user being prompted to manually input credentials when executing the resulting script. #>
 function Set-ObtainRequiredCredentials
 {
-  $credsContent = ""
-  foreach($credential in $Global:CredsRepo)
-  {
-      if(!$credential.ToLower().StartsWith("builtin"))
-      {
-          $credsContent += "    " + (Resolve-Credentials $credential) + " = Get-Credential -UserName `"" + $credential + "`" -Message `"Please provide credentials`"`r`n"
-      }
-  }
-  $credsContent += "`r`n"
-  $startPosition = $Script:dscConfigContent.IndexOf("<# Credentials #>") + 19
-  $Script:dscConfigContent = $Script:dscConfigContent.Insert($startPosition, $credsContent)
+    $credsContent = ""
+    
+    foreach($credential in $Global:CredsRepo)
+    {
+        if(!$credential.ToLower().StartsWith("builtin"))
+        {
+            if(!$Azure)
+            {
+                $credsContent += "    " + (Resolve-Credentials $credential) + " = Get-Credential -UserName `"" + $credential + "`" -Message `"Please provide credentials`"`r`n"
+            }
+            else
+            {
+                $resolvedName = (Resolve-Credentials $credential)
+                $credsContent += "    " + $resolvedName + " = Get-AutomationPSCredential -Name " + ($resolvedName.Replace("$", "")) + "`r`n"
+            }
+        }
+    }
+    $credsContent += "`r`n"
+    $startPosition = $Script:dscConfigContent.IndexOf("<# Credentials #>") + 19
+    $Script:dscConfigContent = $Script:dscConfigContent.Insert($startPosition, $credsContent)
 }
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
