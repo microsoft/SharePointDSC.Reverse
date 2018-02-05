@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.0.0.0
+.VERSION 2.1.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,10 +16,11 @@
 
 .RELEASENOTES
 
-* Aligned with SharePointDSC 2.0.0.0
+* Aligned with SharePointDSC 2.1.0.0
+* Fixed issue with duplicate key in ConfigurationData
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.1"},@{ModuleName="SharePointDSC";ModuleVersion="2.0.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.1"},@{ModuleName="SharePointDSC";ModuleVersion="2.1.0.0"}
 
 <# 
 
@@ -48,7 +49,7 @@ $Script:dscConfigContent = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "2.0.0.0"
+$SPDSCVersion = "2.1.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -780,7 +781,10 @@ function Read-SPFarm (){
 
   if($spMajorVersion -ge 16)
   {
-      $results.Add("ServerRole", "`$Node.ServerRole")
+      if(!$results.Contains("ServerRole"))
+      {
+        $results.Add("ServerRole", "`$Node.ServerRole")
+      }
   }
   else 
   {
