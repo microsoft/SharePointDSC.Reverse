@@ -10,7 +10,7 @@
 
 .EXTERNALMODULEDEPENDENCIES
 
-.TAGS SharePoint,ReverseDSC
+.TAGS SharePoint,ReverseDSC,DesiredStateConfiguration,DSC,DSCResourceKit,DSCResource
 
 .ICONURI https://GitHub.com/Microsoft/SharePointDSC.Reverse/blob/master/Images/SharePointDSC.Reverse.png?raw=true
 
@@ -784,6 +784,10 @@ function Read-SPFarm (){
       if(!$results.Contains("ServerRole"))
       {
         $results.Add("ServerRole", "`$Node.ServerRole")
+      }
+      else
+      {
+        $results["ServerRole"] = "`$Node.ServerRole"
       }
   }
   else 
@@ -1949,7 +1953,10 @@ function Read-SecureStoreServiceApplication
       $results.DatabaseServer = $secStoreDBs.NormalizedDataSource
 
       <# WA - Can't dynamically retrieve value from the Secure Store at the moment #>
-      $results.Add("AuditingEnabled", $true)
+      if(!$results.Contains("AuditingEnabled"))
+      {
+        $results.Add("AuditingEnabled", $true)
+      }
 
       if($results.Contains("InstallAccount"))
       {
