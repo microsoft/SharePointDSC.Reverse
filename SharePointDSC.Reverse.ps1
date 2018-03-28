@@ -18,6 +18,7 @@
 
 * Aligned with SharePointDSC 2.3.0.0;
 * Fixed issue with null languages for SPManagedMetadataService;
+* Added additional verbose info during the SPTimerJob State extraction;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.5"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
@@ -1842,7 +1843,7 @@ function Read-CacheAccounts ($modulePath, $params){
 }
 
 <## This function retrieves settings related to the User Profile Service Application. #>
-function Read-UserProfileServiceapplication ($modulePath, $params){
+function Read-UserProfileServiceApplication ($modulePath, $params){
   if($modulePath -ne $null)
   {
       $module = Resolve-Path $modulePath
@@ -2261,8 +2262,12 @@ function Read-SPTimerJobState
   $params = Get-DSCFakeParameters -ModulePath $module
   
   $spTimers = Get-SPTimerJob
+  $totalTimers = $spTimers.Length
+  $i = 0;
   foreach($timer in $spTimers)
   {
+      $i++
+        Write-Host "Scanning Timer Job {"$timer.Name"}[$i/$totalTimers]..."
       if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
       {
         $params.TypeName = $timer.TypeName
