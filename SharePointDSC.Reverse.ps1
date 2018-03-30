@@ -56,19 +56,21 @@ $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
 if($Mode.ToLower() -eq "lite")
 {
-  $Script:ExtractionModeValue = 1
+    $Script:ExtractionModeValue = 1
 }
 elseif($Mode.ToLower() -eq "full")
 {
-  $Script:ExtractionModeValue = 3
+    $Script:ExtractionModeValue = 3
 }
 
-try {
-  $currentScript = Test-ScriptFileInfo $SCRIPT:MyInvocation.MyCommand.Path
-  $Script:version = $currentScript.Version.ToString()
+try
+{
+    $currentScript = Test-ScriptFileInfo $SCRIPT:MyInvocation.MyCommand.Path
+    $Script:version = $currentScript.Version.ToString()
 }
-catch {
-  $Script:version = "N/A"
+catch
+{
+    $Script:version = "N/A"
 }
 $Script:SPDSCPath = $SPDSCSource + $SPDSCVersion
 $Global:spFarmAccount = ""
@@ -77,1029 +79,1037 @@ $Global:spFarmAccount = ""
 <## This is the main function for this script. It acts as a call dispatcher, calling the various functions required in the proper order to get the full farm picture. #>
 function Orchestrator
 {
-  Test-Prerequisites
-      
-  Import-Module -Name "ReverseDSC" -Force
-
-  $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
-  Save-Credentials $Global:spFarmAccount.UserName
-
-  $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
-  $spFarm = Get-SPFarm
-  $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
-  if($Standalone)
-  {
-      $i = 0;
-      foreach($spServer in $spServers)
-      {
-          if($i -eq 0)
-          {
-              $spServers = @($spServer)
-          }
-          $i++
-      }        
-  }
-  $Script:dscConfigContent += "<# Generated with ReverseDSC " + $script:version + " #>`r`n"
-
-  Write-Host "Scanning Operating System Version..." -BackgroundColor DarkGreen -ForegroundColor White
-  Read-OperatingSystemVersion
-
-  Write-Host "Scanning SQL Server Version..." -BackgroundColor DarkGreen -ForegroundColor White
-  Read-SQLVersion
-
-  Write-Host "Scanning Patch Levels..." -BackgroundColor DarkGreen -ForegroundColor White
-  Read-SPProductVersions
-
-  $Script:configName = "SPFarmConfig"
-  if($Standalone)
-  {
-      $Script:configName = "SPStandalone"
-  }
-  if($Script:ExtractionModeValue -eq 3)
-  {
-      $Script:configName += "-Full"
-  }
-  elseif($Script:ExtractionModeValue -eq 1)
-  {
-      $Script:configName += "-Lite"
-  }
-  $Script:dscConfigContent += "Configuration $Script:configName`r`n"
-  $Script:dscConfigContent += "{`r`n"
-  $Script:dscConfigContent += "    <# Credentials #>`r`n"
-
-  Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
-  Set-Imports
-
-  $serverNumber = 1
-  $nodeLoopDone = $false;
-  foreach($spServer in $spServers)
-  {
-      $Script:currentServerName = $spServer.Name
-      
-      <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
-      if($spServer.Role -ne "Invalid")
-      {
-          Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
-
-          if($serverNumber -eq 1)
-          {
-              $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
-          }
-          elseif(!$nodeLoopDone){
-              $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
-          }
-          
-          <# Extract the ServerRole property for SP2016 servers; #>
-          $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-          $currentServer = Get-SPServer $Script:currentServerName
-          if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
-          {
-              Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
-          }
-
-          if($serverNumber -eq 1 -or !$nodeLoopDone)
-          {
-            Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-            Read-SPInstallPrereqs
-
-            Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-            Read-SPInstall
-
-            Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-            Read-SPFarm -ServerName $spServer.Address
-          }
-
-          if($serverNumber -eq 1)
-          {
-              Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPManagedAccounts
-
-              Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWebApplications
-
-              Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWebAppPermissions
-
-              Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAlternateUrl
-
-              Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPManagedPaths                
-
-              Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPServiceApplicationPools
-
-              if(!$SkipSitesAndWebs)
-              {
-                Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPContentDatabase
-
-                Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPQuotaTemplate
-              
-                Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSitesAndWebs
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-DiagnosticLoggingSettings
-
-              Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPUsageServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWebAppPolicy
-
-              Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-StateServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-UserProfileServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPMachineTranslationServiceApp
-
-              Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-CacheAccounts
-
-              Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SecureStoreServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-BCSServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SearchServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-ManagedMetadataServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAccessServiceApp
-
-              Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAccessServices2010
-
-              Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAntivirusSettings
-
-              Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAppCatalog
-
-              Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPSubscriptionSettingsServiceApp
-
-              Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAppDomain
-
-              Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAppManagementServiceApp
-
-              Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPAppStoreSettings
-
-              Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPBlobCacheSettings
-
-              Write-Host "["$spServer.Name"] Scanning Configuration Wizard Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPConfigWizard
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPDatabaseAAG
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPDistributedCacheService
-
-              Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPExcelServiceApp
-
-              Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarmAdministrators
-
-              Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarmSolution
-
-              if($Script:ExtractionModeValue -eq 3)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPHealthAnalyzerRuleState
-              }
-
-              Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPIrmSettings
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPOfficeOnlineServerBinding
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPSearchCrawlRule
-              }
-
-              if($Script:ExtractionModeValue -eq 3)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPSearchFileType
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPSearchIndexPartition
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPSearchResultSource
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPSearchTopology                
-              
-              Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWordAutomationServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPVisioServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWorkManagementServiceApplication
-
-              Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPPerformancePointServiceApplication
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebAppWorkflowSettings
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebAppThrottlingSettings
-              }
-
-              if($Script:ExtractionModeValue -eq 3)
-              {
-                  Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPTimerJobState
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebAppSiteUseAndDeletion
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebAppProxyGroup
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebApplicationExtension
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWebApplicationAppDomain
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPWebAppGeneralSettings
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPWebAppBlockedFileTypes
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPUserProfileSection
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPUserProfileProperty
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPUserProfileServiceAppPermissions
-              }
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPUserProfileSyncConnection 
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPTrustedIdentityTokenIssuer
-              }
-
-              Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPFarmPropertyBag
-
-              Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPSessionStateService
-
-              Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-              Read-SPPublishServiceApplication
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPRemoteFarmTrust
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPPasswordChangeSettings
-              }
-
-              if($Script:ExtractionModeValue -ge 2)
-              {
-                  Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                  Read-SPServiceAppSecurity
-              }
-          }
-
-          Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-          if(!$Standalone -and !$nodeLoopDone)
-          {
-              Read-SPServiceInstance -Servers @($spServer.Name)              
-
-              $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-              $Script:dscConfigContent += "        {`r`n"
-              $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-              $Script:dscConfigContent += "            {`r`n"
-              $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-              $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-
-              if($PSVersionTable.PSVersion.Major -ge 5)
-              {
-                  $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-              }
-              else {
-                  $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-              }
-
-              $Script:dscConfigContent += "            }`r`n"
-              $Script:dscConfigContent += "        }`r`n"
-          }
-          else {
-              $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
-
-              $serverAddresses = @()
-              foreach($server in $servers)
-              {
-                  $serverAddresses += $server.Address
-              }
-              if(!$serviceLoopDone)
-              {
-                Read-SPServiceInstance -Servers $serverAddresses
-                $serviceLoopDone = $true
-              }
-          }
-
-          Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
-          if($serverNumber -eq 1 -or !$nodeLoopDone)
-          {
-            if($serverNumber -gt 1)
+    Test-Prerequisites
+    Import-Module -Name "ReverseDSC" -Force
+
+    $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+    Save-Credentials $Global:spFarmAccount.UserName
+
+    $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
+    $spFarm = Get-SPFarm
+    $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
+    if($Standalone)
+    {
+        $i = 0;
+        foreach($spServer in $spServers)
+        {
+            if($i -eq 0)
             {
-              $nodeLoopDone = $true
+                $spServers = @($spServer)
             }
-            
-            Set-LCM
-            $Script:dscConfigContent += "`r`n    }`r`n"
-          }
-          
-          $serverNumber++
-      }
-  }    
-  $Script:dscConfigContent += "`r`n}`r`n"
-  Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
-  Set-ObtainRequiredCredentials
+            $i++
+        }
+    }
+    $Script:dscConfigContent += "<# Generated with ReverseDSC " + $script:version + " #>`r`n"
 
-  if(!$Azure)
-  {
-    $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
-  }
+    Write-Host "Scanning Operating System Version..." -BackgroundColor DarkGreen -ForegroundColor White
+    Read-OperatingSystemVersion
+
+    Write-Host "Scanning SQL Server Version..." -BackgroundColor DarkGreen -ForegroundColor White
+    Read-SQLVersion
+
+    Write-Host "Scanning Patch Levels..." -BackgroundColor DarkGreen -ForegroundColor White
+    Read-SPProductVersions
+
+    $Script:configName = "SPFarmConfig"
+    if($Standalone)
+    {
+        $Script:configName = "SPStandalone"
+    }
+    if($Script:ExtractionModeValue -eq 3)
+    {
+        $Script:configName += "-Full"
+    }
+    elseif($Script:ExtractionModeValue -eq 1)
+    {
+        $Script:configName += "-Lite"
+    }
+    $Script:dscConfigContent += "Configuration $Script:configName`r`n"
+    $Script:dscConfigContent += "{`r`n"
+    $Script:dscConfigContent += "    <# Credentials #>`r`n"
+
+    Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
+    Set-Imports
+
+    $serverNumber = 1
+    $nodeLoopDone = $false;
+    foreach($spServer in $spServers)
+    {
+        $Script:currentServerName = $spServer.Name
+
+        <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
+        if($spServer.Role -ne "Invalid")
+        {
+            Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
+
+            if($serverNumber -eq 1)
+            {
+                $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
+            }
+            elseif(!$nodeLoopDone){
+                $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -ne '1'}.NodeName`r`n    {`r`n"
+            }
+
+            <# Extract the ServerRole property for SP2016 servers; #>
+            $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+            $currentServer = Get-SPServer $Script:currentServerName
+            if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
+            {
+                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
+            }
+
+            if($serverNumber -eq 1 -or !$nodeLoopDone)
+            {
+                Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPInstallPrereqs
+
+                Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPInstall
+
+                Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarm -ServerName $spServer.Address
+            }
+
+            if($serverNumber -eq 1)
+            {
+                Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPManagedAccounts
+
+                Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWebApplications
+
+                Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWebAppPermissions
+
+                Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAlternateUrl
+
+                Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPManagedPaths                
+
+                Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPServiceApplicationPools
+
+                if(!$SkipSitesAndWebs)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPContentDatabase
+
+                    Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPQuotaTemplate
+
+                    Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSitesAndWebs
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-DiagnosticLoggingSettings
+
+                Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPUsageServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWebAppPolicy
+
+                Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-StateServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-UserProfileServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPMachineTranslationServiceApp
+
+                Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-CacheAccounts
+
+                Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SecureStoreServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-BCSServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SearchServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-ManagedMetadataServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAccessServiceApp
+
+                Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAccessServices2010
+
+                Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAntivirusSettings
+
+                Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAppCatalog
+
+                Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSubscriptionSettingsServiceApp
+
+                Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAppDomain
+
+                Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAppManagementServiceApp
+
+                Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPAppStoreSettings
+
+                Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPBlobCacheSettings
+
+                Write-Host "["$spServer.Name"] Scanning Configuration Wizard Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPConfigWizard
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPDatabaseAAG
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPDistributedCacheService
+
+                Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPExcelServiceApp
+
+                Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarmAdministrators
+
+                Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarmSolution
+
+                if($Script:ExtractionModeValue -eq 3)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPHealthAnalyzerRuleState
+                }
+
+                Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPIrmSettings
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPOfficeOnlineServerBinding
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchCrawlRule
+                }
+
+                if($Script:ExtractionModeValue -eq 3)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchFileType
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSearchIndexPartition
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchResultSource
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSearchTopology
+
+                Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWordAutomationServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPVisioServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWorkManagementServiceApplication
+
+                Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPPerformancePointServiceApplication
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppWorkflowSettings
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppThrottlingSettings
+                }
+
+                if($Script:ExtractionModeValue -eq 3)
+                {
+                    Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPTimerJobState
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppSiteUseAndDeletion
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppProxyGroup
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplicationExtension
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWebApplicationAppDomain
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppGeneralSettings
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPWebAppBlockedFileTypes
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileSection
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileProperty
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileServiceAppPermissions
+                }
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileSyncConnection 
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPTrustedIdentityTokenIssuer
+                }
+
+                Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarmPropertyBag
+
+                Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSessionStateService
+
+                Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPPublishServiceApplication
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPRemoteFarmTrust
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPPasswordChangeSettings
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPServiceAppSecurity
+                }
+            }
+
+            Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+            if(!$Standalone -and !$nodeLoopDone)
+            {
+                Read-SPServiceInstance -Servers @($spServer.Name)              
+
+                $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                $Script:dscConfigContent += "            {`r`n"
+                $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                if($PSVersionTable.PSVersion.Major -ge 5)
+                {
+                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                }
+                else
+                {
+                    $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                }
+
+                $Script:dscConfigContent += "            }`r`n"
+                $Script:dscConfigContent += "        }`r`n"
+            }
+            else
+            {
+                $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
+
+                $serverAddresses = @()
+                foreach($server in $servers)
+                {
+                    $serverAddresses += $server.Address
+                }
+                if(!$serviceLoopDone)
+                {
+                    Read-SPServiceInstance -Servers $serverAddresses
+                    $serviceLoopDone = $true
+                }
+            }
+
+            Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
+            if($serverNumber -eq 1 -or !$nodeLoopDone)
+            {
+                if($serverNumber -gt 1)
+                {
+                    $nodeLoopDone = $true
+                }
+            
+                Set-LCM
+                $Script:dscConfigContent += "`r`n    }`r`n"
+            }
+          
+            $serverNumber++
+        }
+    }
+    $Script:dscConfigContent += "`r`n}`r`n"
+    Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
+    Set-ObtainRequiredCredentials
+
+    if(!$Azure)
+    {
+        $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+    }
 }
 
 function Test-Prerequisites
 {
-  <# Validate the PowerShell Version #>
-  if($psVersionTable.PSVersion.Major -eq 4)
-  {
-      Write-Host "`r`nI100"  -BackgroundColor Cyan -ForegroundColor Black -NoNewline
-      Write-Host "    - PowerShell v4 detected. While this script will work just fine with v4, it is highly recommended you upgrade to PowerShell v5 to get the most out of DSC"
-  }
-  elseif($psVersionTable.PSVersion.Major -lt 4)
-  {
-      Write-Host "`r`nE100"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
-      Write-Host "    - We are sorry, PowerShell v3 or lower is not supported by the ReverseDSC Engine"
-      exit
-  }
+    <# Validate the PowerShell Version #>
+    if($psVersionTable.PSVersion.Major -eq 4)
+    {
+        Write-Host "`r`nI100"  -BackgroundColor Cyan -ForegroundColor Black -NoNewline
+        Write-Host "    - PowerShell v4 detected. While this script will work just fine with v4, it is highly recommended you upgrade to PowerShell v5 to get the most out of DSC"
+    }
+    elseif($psVersionTable.PSVersion.Major -lt 4)
+    {
+        Write-Host "`r`nE100"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
+        Write-Host "    - We are sorry, PowerShell v3 or lower is not supported by the ReverseDSC Engine"
+        exit
+    }
 
-  <# Check to see if the SharePointDSC module is installed on the machine #>
-  if(Get-Command "Get-DSCModule" -EA SilentlyContinue)
-  {
-      $spDSCCheck = Get-DSCResource -Module "SharePointDSC" | Where-Object{$_.Version -eq $SPDSCVersion} -ErrorAction SilentlyContinue
-      <# Because the SkipPublisherCheck parameter doesn't seem to be supported on Win2012R2 / PowerShell prior to 5.1, let's set whether the parameters are specified here. #>
-      if (Get-Command -Name Install-Module -ParameterName SkipPublisherCheck -ErrorAction SilentlyContinue)
-      {
-          $skipPublisherCheckParameter = @{SkipPublisherCheck = $true}
-      }
-      else {$skipPublisherCheckParameter = @{}}
-      if($spDSCCheck.Length -eq 0)
-      {        
-          $cmd = Get-Command Install-Module
-          if($psVersionTable.PSVersion.Major -ge 5 -or $cmd)
-          {
-              if(!$Confirm)
-              {
-                  $shouldInstall = 'y'
-              }
-              else {
-                  $shouldInstall = Read-Host "The SharePointDSC module could not be found on the machine. Do you wish to download and install it (y/n)?"
-              }
-              
-              if($shouldInstall.ToLower() -eq "y")
-              {
-                  Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
-                  Install-Module SharePointDSC -RequiredVersion $SPDSCVersion -Confirm:$false @skipPublisherCheckParameter
-              }
-              else
-              {
-                  Write-Host "`r`nE101"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
-                  Write-Host "   - We are sorry, but the script cannot continue without the SharePoint DSC module installed."
-                  exit
-              }   
-          }
-          else
-          {
-              Write-Host "`r`nW101"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
-              Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
-              $Script:SPDSCPath = $moduleObject[0].Module.Path.ToLower().Replace("sharepointdsc.psd1", "").Replace("\", "/")
-          }
-      }        
-  }
-  else
-  {
-      <# PowerShell v4 is most likely present, without the PackageManagement module. We need to manually check to see if the SharePoint
-         DSC Module is present on the machine. #>
-      $cmd = Get-Command Install-Module -EA SilentlyContinue
-      if(!$cmd)
-      {
-          Write-Host "`r`nW102"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
-          Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
-      }
-      $moduleObject = Get-DSCResource | Where-Object{$_.Module -like "SharePointDsc"} -ErrorAction SilentlyContinue
-      if(!$moduleObject)
-      {
-          Write-Host "`r`nE103"  -BackgroundColor Red -ForegroundColor Black -NoNewline
-          Write-Host "    - Could not find the SharePointDSC Module Resource on the current server."
-          exit;
-      }
-      $Script:SPDSCPath = $moduleObject[0].Module.Path.ToLower().Replace("sharepointdsc.psd1", "").Replace("\", "/")
-  }
+    <# Check to see if the SharePointDSC module is installed on the machine #>
+    if(Get-Command "Get-DSCModule" -EA SilentlyContinue)
+    {
+        $spDSCCheck = Get-DSCResource -Module "SharePointDSC" | Where-Object{$_.Version -eq $SPDSCVersion} -ErrorAction SilentlyContinue
+        <# Because the SkipPublisherCheck parameter doesn't seem to be supported on Win2012R2 / PowerShell prior to 5.1, let's set whether the parameters are specified here. #>
+        if (Get-Command -Name Install-Module -ParameterName SkipPublisherCheck -ErrorAction SilentlyContinue)
+        {
+            $skipPublisherCheckParameter = @{SkipPublisherCheck = $true}
+        }
+        else
+        {
+            $skipPublisherCheckParameter = @{}
+        }
+        if($spDSCCheck.Length -eq 0)
+        {
+            $cmd = Get-Command Install-Module
+            if($psVersionTable.PSVersion.Major -ge 5 -or $cmd)
+            {
+                if(!$Confirm)
+                {
+                    $shouldInstall = 'y'
+                }
+                else
+                {
+                    $shouldInstall = Read-Host "The SharePointDSC module could not be found on the machine. Do you wish to download and install it (y/n)?"
+                }
+
+                if($shouldInstall.ToLower() -eq "y")
+                {
+                    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+                    Install-Module SharePointDSC -RequiredVersion $SPDSCVersion -Confirm:$false @skipPublisherCheckParameter
+                }
+                else
+                {
+                    Write-Host "`r`nE101"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
+                    Write-Host "   - We are sorry, but the script cannot continue without the SharePoint DSC module installed."
+                    exit
+                }
+            }
+            else
+            {
+                Write-Host "`r`nW101"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
+                Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
+                $Script:SPDSCPath = $moduleObject[0].Module.Path.ToLower().Replace("sharepointdsc.psd1", "").Replace("\", "/")
+            }
+        }
+    }
+    else
+    {
+        <# PowerShell v4 is most likely present, without the PackageManagement module. We need to manually check to see if the SharePoint
+           DSC Module is present on the machine. #>
+        $cmd = Get-Command Install-Module -EA SilentlyContinue
+        if(!$cmd)
+        {
+            Write-Host "`r`nW102"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
+            Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
+        }
+        $moduleObject = Get-DSCResource | Where-Object{$_.Module -like "SharePointDsc"} -ErrorAction SilentlyContinue
+        if(!$moduleObject)
+        {
+            Write-Host "`r`nE103"  -BackgroundColor Red -ForegroundColor Black -NoNewline
+            Write-Host "    - Could not find the SharePointDSC Module Resource on the current server."
+            exit;
+        }
+        $Script:SPDSCPath = $moduleObject[0].Module.Path.ToLower().Replace("sharepointdsc.psd1", "").Replace("\", "/")
+    }
 }
 
 function Read-OperatingSystemVersion
 {
-  $servers = Get-SPServer
-  $Script:dscConfigContent += "<#`r`n    Operating Systems in this Farm`r`n-------------------------------------------`r`n"
-  $Script:dscConfigContent += "    Products and Language Packs`r`n"
-  $Script:dscConfigContent += "-------------------------------------------`r`n"
-  foreach($spServer in $servers)
-  {
-      $serverName = $spServer.Name
-      try{
-          $osInfo = Get-CimInstance Win32_OperatingSystem  -ComputerName $serverName -ErrorAction SilentlyContinue| Select-Object @{Label="OSName"; Expression={$_.Name.Substring($_.Name.indexof("W"),$_.Name.indexof("|")-$_.Name.indexof("W"))}} , Version ,OSArchitecture -ErrorAction SilentlyContinue
-          $Script:dscConfigContent += "    [" + $serverName + "]: " + $osInfo.OSName + "(" + $osInfo.OSArchitecture + ")    ----    " + $osInfo.Version + "`r`n"
-      }
-      catch{}
-  }    
-  $Script:dscConfigContent += "#>`r`n`r`n"
+    $servers = Get-SPServer
+    $Script:dscConfigContent += "<#`r`n    Operating Systems in this Farm`r`n-------------------------------------------`r`n"
+    $Script:dscConfigContent += "    Products and Language Packs`r`n"
+    $Script:dscConfigContent += "-------------------------------------------`r`n"
+    foreach($spServer in $servers)
+    {
+        $serverName = $spServer.Name
+        try
+        {
+            $osInfo = Get-CimInstance Win32_OperatingSystem  -ComputerName $serverName -ErrorAction SilentlyContinue| Select-Object @{Label="OSName"; Expression={$_.Name.Substring($_.Name.indexof("W"),$_.Name.indexof("|")-$_.Name.indexof("W"))}} , Version ,OSArchitecture -ErrorAction SilentlyContinue
+            $Script:dscConfigContent += "    [" + $serverName + "]: " + $osInfo.OSName + "(" + $osInfo.OSArchitecture + ")    ----    " + $osInfo.Version + "`r`n"
+        }
+        catch{}
+    }
+    $Script:dscConfigContent += "#>`r`n`r`n"
 }
 function Read-SQLVersion
 {
-  $uniqueServers = @()
-  $sqlServers = Get-SPDatabase | Select-Object Server -Unique
-  foreach($sqlServer in $sqlServers)
-  {
-      $serverName = $sqlServer.Server.Address
+    $uniqueServers = @()
+    $sqlServers = Get-SPDatabase | Select-Object Server -Unique
+    foreach($sqlServer in $sqlServers)
+    {
+        $serverName = $sqlServer.Server.Address
 
-      if($serverName -eq $null)
-      {
-          $serverName = $sqlServer.Server
-      }
-      
-      if(!($uniqueServers -contains $serverName))
-      {
-          try
-          {
-              $sqlVersionInfo = Invoke-SQL -Server $serverName -dbName "Master" -sqlQuery "SELECT @@VERSION AS 'SQLVersion'"
-              $uniqueServers += $serverName.ToString()
-              $Script:dscConfigContent += "<#`r`n    SQL Server Product Versions Installed on this Farm`r`n-------------------------------------------`r`n"
-              $Script:dscConfigContent += "    Products and Language Packs`r`n"
-              $Script:dscConfigContent += "-------------------------------------------`r`n"
-              $Script:dscConfigContent += "    [" + $serverName.ToUpper() + "]: " + $sqlVersionInfo.SQLversion.Split("`n")[0] + "`r`n#>`r`n`r`n"
-          }
-          catch{}
-      }
-  }
+        if($serverName -eq $null)
+        {
+            $serverName = $sqlServer.Server
+        }
+
+        if(!($uniqueServers -contains $serverName))
+        {
+            try
+            {
+                $sqlVersionInfo = Invoke-SQL -Server $serverName -dbName "Master" -sqlQuery "SELECT @@VERSION AS 'SQLVersion'"
+                $uniqueServers += $serverName.ToString()
+                $Script:dscConfigContent += "<#`r`n    SQL Server Product Versions Installed on this Farm`r`n-------------------------------------------`r`n"
+                $Script:dscConfigContent += "    Products and Language Packs`r`n"
+                $Script:dscConfigContent += "-------------------------------------------`r`n"
+                $Script:dscConfigContent += "    [" + $serverName.ToUpper() + "]: " + $sqlVersionInfo.SQLversion.Split("`n")[0] + "`r`n#>`r`n`r`n"
+            }
+            catch{}
+        }
+    }
 }
 
 
 <## This function ensures all required DSC Modules are properly loaded into the current PowerShell session. #>
 function Set-Imports
 {
-  $Script:dscConfigContent += "    Import-DscResource -ModuleName `"PSDesiredStateConfiguration`"`r`n"
-  $Script:dscConfigContent += "    Import-DscResource -ModuleName `"SharePointDSC`""
-  
-  if($PSVersionTable.PSVersion.Major -eq 5)
-  {
-      $Script:dscConfigContent += " -ModuleVersion `"" + $SPDSCVersion + "`""
-  }
-  $Script:dscConfigContent += "`r`n"
+    $Script:dscConfigContent += "    Import-DscResource -ModuleName `"PSDesiredStateConfiguration`"`r`n"
+    $Script:dscConfigContent += "    Import-DscResource -ModuleName `"SharePointDSC`""
+
+    if($PSVersionTable.PSVersion.Major -eq 5)
+    {
+        $Script:dscConfigContent += " -ModuleVersion `"" + $SPDSCVersion + "`""
+    }
+    $Script:dscConfigContent += "`r`n"
 }
 
 <## This function really is optional, but helps provide valuable information about the various software components installed in the current SharePoint farm (i.e. Cummulative Updates, Language Packs, etc.). #>
 function Read-SPProductVersions
-{    
-  $Script:dscConfigContent += "<#`r`n    SharePoint Product Versions Installed on this Farm`r`n-------------------------------------------`r`n"
-  $Script:dscConfigContent += "    Products and Language Packs`r`n"
-  $Script:dscConfigContent += "-------------------------------------------`r`n"
+{
+    $Script:dscConfigContent += "<#`r`n    SharePoint Product Versions Installed on this Farm`r`n-------------------------------------------`r`n"
+    $Script:dscConfigContent += "    Products and Language Packs`r`n"
+    $Script:dscConfigContent += "-------------------------------------------`r`n"
 
-  if($PSVersionTable.PSVersion -like "2.*")
-  {
-      $RegLoc = Get-ChildItem HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall
-      $Programs = $RegLoc | where-object { $_.PsPath -like "*\Office*" } | ForEach-Object {Get-ItemProperty $_.PsPath}        
+    if($PSVersionTable.PSVersion -like "2.*")
+    {
+        $RegLoc = Get-ChildItem HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall
+        $Programs = $RegLoc | where-object { $_.PsPath -like "*\Office*" } | ForEach-Object {Get-ItemProperty $_.PsPath}        
 
-      foreach($program in $Programs)
-      {
-          $Script:dscConfigContent += "    " +  $program.DisplayName + " -- " + $program.DisplayVersion + "`r`n"
-      }
-  }
-  else
-  {
-      $regLoc = Get-ChildItem HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall
-      $programs = $regLoc | where-object { $_.PsPath -like "*\Office*" } | ForEach-Object {Get-ItemProperty $_.PsPath} 
-      $components = $regLoc | where-object { $_.PsPath -like "*1000-0000000FF1CE}" } | ForEach-Object {Get-ItemProperty $_.PsPath} 
+        foreach($program in $Programs)
+        {
+            $Script:dscConfigContent += "    " +  $program.DisplayName + " -- " + $program.DisplayVersion + "`r`n"
+        }
+    }
+    else
+    {
+        $regLoc = Get-ChildItem HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall
+        $programs = $regLoc | where-object { $_.PsPath -like "*\Office*" } | ForEach-Object {Get-ItemProperty $_.PsPath} 
+        $components = $regLoc | where-object { $_.PsPath -like "*1000-0000000FF1CE}" } | ForEach-Object {Get-ItemProperty $_.PsPath} 
 
-      foreach($program in $programs)
-      { 
-          $productCodes = $_.ProductCodes
-          $component = @() + ($components |     where-object { $_.PSChildName -in $productCodes } | ForEach-Object {Get-ItemProperty $_.PsPath})
-          foreach($component in $components)
-          {
-              $Script:dscConfigContent += "    " + $component.DisplayName + " -- " + $component.DisplayVersion + "`r`n"
-          }        
-      }
-  }
-  $Script:dscConfigContent += "#>`r`n"
+        foreach($program in $programs)
+        { 
+            $productCodes = $_.ProductCodes
+            $component = @() + ($components |     where-object { $_.PSChildName -in $productCodes } | ForEach-Object {Get-ItemProperty $_.PsPath})
+            foreach($component in $components)
+            {
+                $Script:dscConfigContent += "    " + $component.DisplayName + " -- " + $component.DisplayVersion + "`r`n"
+            }
+        }
+    }
+    $Script:dscConfigContent += "#>`r`n"
 }
 function Read-SPInstall
 {
-  Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
-  $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
-  $Script:dscConfigContent += "        {`r`n"
-  $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
-  Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPInstallationBinaryPath" -Value "\\<location>" -Description "Location of the SharePoint Binaries (local path or network share);"
-  $Script:dscConfigContent += "                BinaryDir = `$ConfigurationData.NonNodeData.SPInstallationBinaryPath;`r`n"
-  Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -Description "SharePoint Product Key"
-  $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
-  $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
+    $Script:dscConfigContent += "        {`r`n"
+    $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPInstallationBinaryPath" -Value "\\<location>" -Description "Location of the SharePoint Binaries (local path or network share);"
+    $Script:dscConfigContent += "                BinaryDir = `$ConfigurationData.NonNodeData.SPInstallationBinaryPath;`r`n"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -Description "SharePoint Product Key"
+    $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
+    $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
 
-  if($PSVersionTable.PSVersion.Major -eq 4)
-  {
-      $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-  }
-  else {
-      $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-  }
-  $Script:dscConfigContent += "            }`r`n"
-  $Script:dscConfigContent += "        }`r`n"
+    if($PSVersionTable.PSVersion.Major -eq 4)
+    {
+        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    else
+    {
+        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    $Script:dscConfigContent += "            }`r`n"
+    $Script:dscConfigContent += "        }`r`n"
 }
 
 function Read-SPInstallPrereqs
 {
-  Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
-  $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
-  $Script:dscConfigContent += "        {`r`n"
-  $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
-  Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value "\\<location>" -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
-  $Script:dscConfigContent += "                InstallerPath = `$ConfigurationData.NonNodeData.SPPrereqsInstallerPath;`r`n"
-  $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
-  $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
+    $Script:dscConfigContent += "        {`r`n"
+    $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value "\\<location>" -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
+    $Script:dscConfigContent += "                InstallerPath = `$ConfigurationData.NonNodeData.SPPrereqsInstallerPath;`r`n"
+    $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
+    $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
 
-  if($PSVersionTable.PSVersion.Major -eq 4)
-  {
-      $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-  }
-  else {
-      $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-  }
-  $Script:dscConfigContent += "            }`r`n"
-  $Script:dscConfigContent += "        }`r`n"
+    if($PSVersionTable.PSVersion.Major -eq 4)
+    {
+        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    else
+    {
+        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+    }
+    $Script:dscConfigContent += "            }`r`n"
+    $Script:dscConfigContent += "        }`r`n"
 }
 
 <## This function declares the SPFarm object required to create the config and admin database for the resulting SharePoint Farm. #>
 function Read-SPFarm (){
-  param(
-      [string]$ServerName,
-      [bool]$RunCentralAdmin
-  )
-  $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFarm\MSFT_SPFarm.psm1")
-  Import-Module $module
+    param(
+        [string]$ServerName,
+        [bool]$RunCentralAdmin
+    )
+    $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFarm\MSFT_SPFarm.psm1")
+    Import-Module $module
 
-  $Script:dscConfigContent += "        SPFarm " + [System.Guid]::NewGuid().ToString() + "`r`n        {`r`n"
-  $params = Get-DSCFakeParameters -ModulePath $module
-  <# If not SP2016, remove the server role param. #>
-  if ($spMajorVersion -ne 16) {
-      $params.Remove("ServerRole")
-  }
+    $Script:dscConfigContent += "        SPFarm " + [System.Guid]::NewGuid().ToString() + "`r`n        {`r`n"
+    $params = Get-DSCFakeParameters -ModulePath $module
+    <# If not SP2016, remove the server role param. #>
+    if ($spMajorVersion -ne 16)
+    {
+        $params.Remove("ServerRole")
+    }
 
-  <# Can't have both the InstallAccount and PsDscRunAsCredential variables present. Remove InstallAccount if both are there. #>
-  if($params.Contains("InstallAccount"))
-  {
-      $params.Remove("InstallAccount")
-  }
+    <# Can't have both the InstallAccount and PsDscRunAsCredential variables present. Remove InstallAccount if both are there. #>
+    if($params.Contains("InstallAccount"))
+    {
+        $params.Remove("InstallAccount")
+    }
 
-  <# WA - Bug in 1.6.0.0 Get-TargetResource does not return the current Authentication Method; #>
-  $caAuthMethod = "NTLM"
-  if(!$Script:spCentralAdmin.IisSettings[0].DisableKerberos)
-  {
-      $caAuthMethod = "Kerberos"
-  }
-  $params.CentralAdministrationAuth = $caAuthMethod
+    <# WA - Bug in 1.6.0.0 Get-TargetResource does not return the current Authentication Method; #>
+    $caAuthMethod = "NTLM"
+    if(!$Script:spCentralAdmin.IisSettings[0].DisableKerberos)
+    {
+        $caAuthMethod = "Kerberos"
+    }
+    $params.CentralAdministrationAuth = $caAuthMethod
 
-  $params.FarmAccount = $Global:spFarmAccount
-  $params.Passphrase = $Global:spFarmAccount
-  $results = Get-TargetResource @params
-  <# Remove the default generated PassPhrase and ensure the resulting Configuration Script will prompt user for it. #>
-  $results.Remove("Passphrase");
+    $params.FarmAccount = $Global:spFarmAccount
+    $params.Passphrase = $Global:spFarmAccount
+    $results = Get-TargetResource @params
 
-  <# WA - Bug in 1.6.0.0 Get-TargetResource not returning name if aliases are used #>
-  $configDB = Get-SPDatabase | Where-Object{$_.Type -eq "Configuration Database"}
-  $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+    <# Remove the default generated PassPhrase and ensure the resulting Configuration Script will prompt user for it. #>
+    $results.Remove("Passphrase");
 
-  if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
-  {
-      Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-  }
+    <# WA - Bug in 1.6.0.0 Get-TargetResource not returning name if aliases are used #>
+    $configDB = Get-SPDatabase | Where-Object{$_.Type -eq "Configuration Database"}
+    $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-  if($null -eq (Get-ConfigurationDataEntry -Key "PassPhrase"))
-  {
-      Add-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
-  }
+    if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
+    {
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+    }
 
-  $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$ConfigurationData.NonNodeData.PassPhrase -AsPlainText -Force));`r`n"
+    if($null -eq (Get-ConfigurationDataEntry -Key "PassPhrase"))
+    {
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
+    }
+
+    $Script:dscConfigContent += "            Passphrase = New-Object System.Management.Automation.PSCredential ('Passphrase', (ConvertTo-SecureString -String `$ConfigurationData.NonNodeData.PassPhrase -AsPlainText -Force));`r`n"
+    $currentServer = Get-SPServer $ServerName
   
-  $currentServer = Get-SPServer $ServerName
-  
-  if(!$results.ContainsKey("RunCentralAdmin"))
-  {
-      $results.Add("RunCentralAdmin", $RunCentralAdmin)
-  }
+    if(!$results.ContainsKey("RunCentralAdmin"))
+    {
+        $results.Add("RunCentralAdmin", $RunCentralAdmin)
+    }
 
-  if($spMajorVersion -ge 16)
-  {
-      if(!$results.Contains("ServerRole"))
-      {
-        $results.Add("ServerRole", "`$Node.ServerRole")
-      }
-      else
-      {
-        $results["ServerRole"] = "`$Node.ServerRole"
-      }
-  }
-  else 
-  {
-      $results.Remove("ServerRole")
-  }
-  $results = Repair-Credentials -results $results
-  $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-  $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-  if($spMajorVersion -ge 16)
-  {
-    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
-  }
-  $Script:dscConfigContent += $currentBlock
-  $Script:dscConfigContent += "        }`r`n"
+    if($spMajorVersion -ge 16)
+    {
+        if(!$results.Contains("ServerRole"))
+        {
+            $results.Add("ServerRole", "`$Node.ServerRole")
+        }
+        else
+        {
+            $results["ServerRole"] = "`$Node.ServerRole"
+        }
+    }
+    else 
+    {
+        $results.Remove("ServerRole")
+    }
+    $results = Repair-Credentials -results $results
+    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+    if($spMajorVersion -ge 16)
+    {
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
+    }
+    $Script:dscConfigContent += $currentBlock
+    $Script:dscConfigContent += "        }`r`n"
 
-  <# SPFarm Feature Section #>
-  if($Script:ExtractionModeValue -eq 3)
-  {
-      $versionFilter = $spMajorVersion.ToString() + "*"
-      $farmFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Farm" -and $_.Version -like $versionFilter}
-      $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
-      Import-Module $moduleFeature
-      $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
+    <# SPFarm Feature Section #>
+    if($Script:ExtractionModeValue -eq 3)
+    {
+        $versionFilter = $spMajorVersion.ToString() + "*"
+        $farmFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Farm" -and $_.Version -like $versionFilter}
+        $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
+        Import-Module $moduleFeature
+        $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
 
-      $featuresAlreadyAdded = @()
-      $i = 1
-      $total = $farmFeatures.Length
-      foreach($farmFeature in $farmFeatures)
-      {
-          $featureName = $farmFeature.DisplayName
-          Write-Host "Scanning Farm Feature [$i/$total] {$featureName}"
-          if(!$featuresAlreadyAdded.Contains($farmFeature.DisplayName))
-          {
-              $featuresAlreadyAdded += $featureName
-              $paramsFeature.Name = $featureName
-              $paramsFeature.FeatureScope = "Farm"
-              $resultsFeature = Get-TargetResource @paramsFeature
+        $featuresAlreadyAdded = @()
+        $i = 1
+        $total = $farmFeatures.Length
+        foreach($farmFeature in $farmFeatures)
+        {
+            $featureName = $farmFeature.DisplayName
+            Write-Host "Scanning Farm Feature [$i/$total] {$featureName}"
+            if(!$featuresAlreadyAdded.Contains($farmFeature.DisplayName))
+            {
+                $featuresAlreadyAdded += $featureName
+                $paramsFeature.Name = $featureName
+                $paramsFeature.FeatureScope = "Farm"
+                $resultsFeature = Get-TargetResource @paramsFeature
 
-              if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
-              {
-                  $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                  $Script:dscConfigContent += "        {`r`n"
+                if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
+                {
+                    $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
 
-                  <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
-                     https://github.com/PowerShell/SharePointDsc/issues/481 #>
-                  if($resultsFeature.ContainsKey("InstalAccount"))
-                  {
-                      $resultsFeature.Remove("InstalAccount")
-                  }
+                    <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
+                       https://github.com/PowerShell/SharePointDsc/issues/481 #>
+                    if($resultsFeature.ContainsKey("InstalAccount"))
+                    {
+                        $resultsFeature.Remove("InstalAccount")
+                    }
                   
-                  $resultsFeature = Repair-Credentials -results $resultsFeature
-                  $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
-                  $Script:dscConfigContent += "        }`r`n"
-              }
-          }
-          $i++
-      }
-  }
+                    $resultsFeature = Repair-Credentials -results $resultsFeature
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                    $Script:dscConfigContent += "        }`r`n"
+                }
+            }
+            $i++
+        }
+    }
 }
 
 <## This function obtains a reference to every Web Application in the farm and declares their properties (i.e. Port, Associated IIS Application Pool, etc.). #>
 function Read-SPWebApplications (){
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPWebApplication\MSFT_SPWebApplication.psm1")
-  Import-Module $module
-  $spWebApplications = Get-SPWebApplication | Sort-Object -Property Name
-  $params = Get-DSCFakeParameters -ModulePath $module
-  
-  $i = 1;
-  $total = $spWebApplications.Length
-  foreach($spWebApp in $spWebApplications)
-  {
-      $webAppName = $params.Name = $spWebApp.Name
-      Write-Host "Scanning SPWebApplication [$i/$total] {$webAppName}"
-      Import-Module $module
-      $Script:dscConfigContent += "        SPWebApplication " + $spWebApp.Name.Replace(" ", "") + "`r`n        {`r`n"      
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPWebApplication\MSFT_SPWebApplication.psm1")
+    Import-Module $module
+    $spWebApplications = Get-SPWebApplication | Sort-Object -Property Name
+    $params = Get-DSCFakeParameters -ModulePath $module
 
-      $params.Name = $webAppName
-      $results = Get-TargetResource @params
-      $results = Repair-Credentials -results $results
+    $i = 1;
+    $total = $spWebApplications.Length
+    foreach($spWebApp in $spWebApplications)
+    {
+        $webAppName = $params.Name = $spWebApp.Name
+        Write-Host "Scanning SPWebApplication [$i/$total] {$webAppName}"
+        Import-Module $module
+        $Script:dscConfigContent += "        SPWebApplication " + $spWebApp.Name.Replace(" ", "") + "`r`n        {`r`n"      
 
-      $appPoolAccount = Get-Credentials $results.ApplicationPoolAccount
-      if($null -eq $appPoolAccount)
-      {
-          Save-Credentials -UserName $results.ApplicationPoolAccount
-      }
-      $results.ApplicationPoolAccount = (Resolve-Credentials -UserName $results.ApplicationPoolAccount) + ".UserName"
+        $params.Name = $webAppName
+        $results = Get-TargetResource @params
+        $results = Repair-Credentials -results $results
 
-      if($null -eq $results.Get_Item("AllowAnonymous"))
-      {
-          $results.Remove("AllowAnonymous")
-      }
+        $appPoolAccount = Get-Credentials $results.ApplicationPoolAccount
+        if($null -eq $appPoolAccount)
+        {
+            Save-Credentials -UserName $results.ApplicationPoolAccount
+        }
+        $results.ApplicationPoolAccount = (Resolve-Credentials -UserName $results.ApplicationPoolAccount) + ".UserName"
 
-      Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-      $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-      
-      $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-      $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
-      $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "DatabaseServer"
-      $Script:dscConfigContent += $currentDSCBlock
-      $Script:dscConfigContent += "        }`r`n"
+        if($null -eq $results.Get_Item("AllowAnonymous"))
+        {
+            $results.Remove("AllowAnonymous")
+        }
 
-      if($Script:ExtractionModeValue -ge 2)
-      {
-          Write-Host "    -> Scanning SharePoint Designer Settings"
-          Read-SPDesignerSettings($spWebApplications.Url.ToString(), "WebApplication", $spWebApp.Name.Replace(" ", ""))
-      }
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-      <# SPWebApplication Feature Section #>
-      if($Script:ExtractionModeValue -eq 3)
-      {
-          $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-          $versionFilter = $spMajorVersion.ToString() + "*"
-          $webAppFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "WebApplication" -and $_.Version -like $versionFilter}
-          $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
-          Import-Module $moduleFeature
-          $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
-          
-          $j = 1
-          $totalFeat = $webAppFeatures.Length
-          foreach($webAppFeature in $webAppFeatures)
-          {
-              $displayName = $webAppFeature.DisplayName
-              Write-Host "    -> Scanning Feature [$j/$totalFeat] {$displayName}"
-              $paramsFeature.Name = $displayName
-              $paramsFeature.FeatureScope = "WebApplication"
-              $paramsFeature.Url = $spWebApp.Url
-              $resultsFeature = Get-TargetResource @paramsFeature
+        $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "DatabaseServer"
+        $Script:dscConfigContent += $currentDSCBlock
+        $Script:dscConfigContent += "        }`r`n"
 
-              if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
-              {
-                  $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                  $Script:dscConfigContent += "        {`r`n"
-          
-                  <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
-                     https://github.com/PowerShell/SharePointDsc/issues/481 #>
-                  if($resultsFeature.ContainsKey("InstalAccount"))
-                  {
-                      $resultsFeature.Remove("InstalAccount")
-                  }
-                  $resultsFeature = Repair-Credentials -results $resultsFeature
-                  $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
-                  $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
-                  $Script:dscConfigContent += "        }`r`n"
-              }
-              $j++
-          }
-      }
+        if($Script:ExtractionModeValue -ge 2)
+        {
+            Write-Host "    -> Scanning SharePoint Designer Settings"
+            Read-SPDesignerSettings($spWebApplications.Url.ToString(), "WebApplication", $spWebApp.Name.Replace(" ", ""))
+        }
 
-      <# Outgoing Email Setting Region #>
-      $moduleEmail = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPOutgoingEmailSettings\MSFT_SPOutgoingEmailSettings.psm1")
-      Import-Module $moduleEmail
-      $paramsEmail = Get-DSCFakeParameters -ModulePath $moduleEmail
+        <# SPWebApplication Feature Section #>
+        if($Script:ExtractionModeValue -eq 3)
+        {
+            $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+            $versionFilter = $spMajorVersion.ToString() + "*"
+            $webAppFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "WebApplication" -and $_.Version -like $versionFilter}
+            $moduleFeature = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFeature\MSFT_SPFeature.psm1")
+            Import-Module $moduleFeature
+            $paramsFeature = Get-DSCFakeParameters -ModulePath $moduleFeature
 
-      $paramsEmail.WebAppUrl = $spWebApp.Url        
-      $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
-      if($spMajorVersion.ToString() -eq "15" -and $paramsEmail.Contains("UseTLS"))
-      {
-          $paramsEmail.Remove("UseTLS")
-      }
-      if($spMajorVersion.ToString() -eq "15" -and $paramsEmail.Contains("SMTPPort"))
-      {
-          $paramsEmail.Remove("SMTPPort")
-      }
+            $j = 1
+            $totalFeat = $webAppFeatures.Length
+            foreach($webAppFeature in $webAppFeatures)
+            {
+                $displayName = $webAppFeature.DisplayName
+                Write-Host "    -> Scanning Feature [$j/$totalFeat] {$displayName}"
+                $paramsFeature.Name = $displayName
+                $paramsFeature.FeatureScope = "WebApplication"
+                $paramsFeature.Url = $spWebApp.Url
+                $resultsFeature = Get-TargetResource @paramsFeature
 
-      $resultsEmail = Get-TargetResource @paramsEmail
-      if($null -eq $resultsEmail["SMTPPort"])
-      {
-          $resultsEmail.Remove("SMTPPort")
-      }
-      if($null -eq $resultsEmail["UseTLS"])
-      {
-          $resultsEmail.Remove("UseTLS")
-      }
-      if($null -eq $resultsEmail["ReplyToAddress"])
-      {
-          $resultsEmail["ReplyToAddress"] = "*"
-      }
-      if($null -ne $resultsEmail["SMTPServer"] -and "" -ne $resultsEmail["SMTPServer"])
-      {
-          Write-Host "    -> Scanning Outgoing Email Settings"
-          $Script:dscConfigContent += "        SPOutgoingEmailSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
-          $Script:dscConfigContent += "        {`r`n"
-          $resultsEmail = Repair-Credentials -results $resultsEmail
-          if($null -eq $resultsEmail.ReplyToAddress -or $resultsEmail.ReplyToAddress -eq "")
-          {
-            $resultsEmail.ReplyToAddress = "*"
-          }
-          $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsEmail -ModulePath $moduleEmail
-          $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
-          $Script:dscConfigContent += "        }`r`n"
-      }
-      $i++
-  }
+                if($resultsFeature.Get_Item("Ensure").ToLower() -eq "present")
+                {
+                    $Script:dscConfigContent += "        SPFeature " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+
+                    <# Manually add the InstallAccount param due to a bug in 1.6.0.0 that returns a param named InstalAccount (typo) instead.
+                       https://github.com/PowerShell/SharePointDsc/issues/481 #>
+                    if($resultsFeature.ContainsKey("InstalAccount"))
+                    {
+                        $resultsFeature.Remove("InstalAccount")
+                    }
+                    $resultsFeature = Repair-Credentials -results $resultsFeature
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                    $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
+                    $Script:dscConfigContent += "        }`r`n"
+                }
+                $j++
+            }
+        }
+
+        <# Outgoing Email Setting Region #>
+        $moduleEmail = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPOutgoingEmailSettings\MSFT_SPOutgoingEmailSettings.psm1")
+        Import-Module $moduleEmail
+        $paramsEmail = Get-DSCFakeParameters -ModulePath $moduleEmail
+
+        $paramsEmail.WebAppUrl = $spWebApp.Url        
+        $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
+        if($spMajorVersion.ToString() -eq "15" -and $paramsEmail.Contains("UseTLS"))
+        {
+            $paramsEmail.Remove("UseTLS")
+        }
+        if($spMajorVersion.ToString() -eq "15" -and $paramsEmail.Contains("SMTPPort"))
+        {
+            $paramsEmail.Remove("SMTPPort")
+        }
+
+        $resultsEmail = Get-TargetResource @paramsEmail
+        if($null -eq $resultsEmail["SMTPPort"])
+        {
+            $resultsEmail.Remove("SMTPPort")
+        }
+        if($null -eq $resultsEmail["UseTLS"])
+        {
+            $resultsEmail.Remove("UseTLS")
+        }
+        if($null -eq $resultsEmail["ReplyToAddress"])
+        {
+            $resultsEmail["ReplyToAddress"] = "*"
+        }
+        if($null -ne $resultsEmail["SMTPServer"] -and "" -ne $resultsEmail["SMTPServer"])
+        {
+            Write-Host "    -> Scanning Outgoing Email Settings"
+            $Script:dscConfigContent += "        SPOutgoingEmailSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $resultsEmail = Repair-Credentials -results $resultsEmail
+            if($null -eq $resultsEmail.ReplyToAddress -or $resultsEmail.ReplyToAddress -eq "")
+            {
+                $resultsEmail.ReplyToAddress = "*"
+            }
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsEmail -ModulePath $moduleEmail
+            $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
+            $Script:dscConfigContent += "        }`r`n"
+        }
+        $i++
+    }
 }
 
 function Repair-Credentials($results)
 {
-  if($null -ne $results)
-  {
-      <## Cleanup the InstallAccount param first (even if we may be adding it back) #>
-      if($null -ne $results.ContainsKey("InstallAccount"))
-      {
-          $results.Remove("InstallAccount")        
-      }
+    if($null -ne $results)
+    {
+        <## Cleanup the InstallAccount param first (even if we may be adding it back) #>
+        if($null -ne $results.ContainsKey("InstallAccount"))
+        {
+            $results.Remove("InstallAccount")        
+        }
 
-      if($null -ne $results.ContainsKey("PsDscRunAsCredential"))
-      {
-          $results.Remove("PsDscRunAsCredential")        
-      }
+        if($null -ne $results.ContainsKey("PsDscRunAsCredential"))
+        {
+            $results.Remove("PsDscRunAsCredential")        
+        }
 
-      if($PSVersionTable.PSVersion.Major -ge 5)
-      {
-          $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
-      }
-      return $results
-  }
-  return $null
+        if($PSVersionTable.PSVersion.Major -ge 5)
+        {
+            $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
+        }
+        return $results
+    }
+    return $null
 }
 
 <## This function loops through every IIS Application Pool that are associated with the various existing Service Applications in the SharePoint farm. ##>
 function Read-SPServiceApplicationPools
 {
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPServiceAppPool\MSFT_SPServiceAppPool.psm1")
-  Import-Module $module
-  
-  $spServiceAppPools = Get-SPServiceApplicationPool | Sort-Object -Property Name
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPServiceAppPool\MSFT_SPServiceAppPool.psm1")
+    Import-Module $module
+    $spServiceAppPools = Get-SPServiceApplicationPool | Sort-Object -Property Name
 
-  $params = Get-DSCFakeParameters -ModulePath $module
+    $params = Get-DSCFakeParameters -ModulePath $module
 
-  $i = 1
-  $total = $spServiceAppPools.Length
-  foreach($spServiceAppPool in $spServiceAppPools)
-  {
-      $appPoolName = $spServiceAppPool.Name
-      Write-Host "Scanning SPServiceApplicationPool [$i/$total] {$appPoolName}"
-      $Script:dscConfigContent += "        SPServiceAppPool " + $spServiceAppPool.Name.Replace(" ", "") + "`r`n"
-      $Script:dscConfigContent += "        {`r`n"
-      $params.Name = $appPoolName
-      $results = Get-TargetResource @params    
-      $results = Repair-Credentials -results $results
+    $i = 1
+    $total = $spServiceAppPools.Length
+    foreach($spServiceAppPool in $spServiceAppPools)
+    {
+        $appPoolName = $spServiceAppPool.Name
+        Write-Host "Scanning SPServiceApplicationPool [$i/$total] {$appPoolName}"
+        $Script:dscConfigContent += "        SPServiceAppPool " + $spServiceAppPool.Name.Replace(" ", "") + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"
+        $params.Name = $appPoolName
+        $results = Get-TargetResource @params    
+        $results = Repair-Credentials -results $results
 
-      $serviceAccount = Get-Credentials $results.ServiceAccount
-      if($null -eq $serviceAccount)
-      {
-          Save-Credentials -UserName $results.ServiceAccount            
-      }        
-      $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
+        $serviceAccount = Get-Credentials $results.ServiceAccount
+        if($null -eq $serviceAccount)
+        {
+            Save-Credentials -UserName $results.ServiceAccount            
+        }
+        $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
 
-      if($null -eq $results.Get_Item("AllowAnonymous"))
-      {
-          $results.Remove("AllowAnonymous")
-      }
-      $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-      $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
-      $Script:dscConfigContent += $currentDSCBlock
+        if($null -eq $results.Get_Item("AllowAnonymous"))
+        {
+            $results.Remove("AllowAnonymous")
+        }
+        $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
+        $Script:dscConfigContent += $currentDSCBlock
 
-      $Script:dscConfigContent += "        }`r`n"
-      $i++
-  }
+        $Script:dscConfigContent += "        }`r`n"
+        $i++
+    }
 }
 
 function Read-SPQuotaTemplate()
 {
-  $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPQuotaTemplate\MSFT_SPQuotaTemplate.psm1")
-  Import-Module $module
-  $contentService = Get-SPDSCContentService
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPQuotaTemplate\MSFT_SPQuotaTemplate.psm1")
+    Import-Module $module
+    $contentService = Get-SPDSCContentService
 
-  $params = Get-DSCFakeParameters -ModulePath $module
+    $params = Get-DSCFakeParameters -ModulePath $module
 
-  $quotaGUID = ""
-  $i = 1
-  $total = $contentservice.QuotaTemplates.Length
-  foreach($quota in $contentservice.QuotaTemplates)
-  {
-      $quotaName = $quota.Name
-      Write-Host "Scanning Quota Template [$i/$total] {$quotaName}"
-      $quotaGUID = [System.Guid]::NewGuid().ToString()
-      $Script:DH_SPQUOTATEMPLATE.Add($quotaName, $quotaGUID)
+    $quotaGUID = ""
+    $i = 1
+    $total = $contentservice.QuotaTemplates.Length
+    foreach($quota in $contentservice.QuotaTemplates)
+    {
+        $quotaName = $quota.Name
+        Write-Host "Scanning Quota Template [$i/$total] {$quotaName}"
+        $quotaGUID = [System.Guid]::NewGuid().ToString()
+        $Script:DH_SPQUOTATEMPLATE.Add($quotaName, $quotaGUID)
 
-      $Script:dscConfigContent += "        SPQuotaTemplate " + $quotaGUID + "`r`n"
-      $Script:dscConfigContent += "        {`r`n"
-      $params.Name = $quota.Name
-      $results = Get-TargetResource @params    
-      $results = Repair-Credentials -results $results
-      $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-      $Script:dscConfigContent += "        }`r`n"
-      $i++
-  }
+        $Script:dscConfigContent += "        SPQuotaTemplate " + $quotaGUID + "`r`n"
+        $Script:dscConfigContent += "        {`r`n"
+        $params.Name = $quota.Name
+        $results = Get-TargetResource @params    
+        $results = Repair-Credentials -results $results
+        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $Script:dscConfigContent += "        }`r`n"
+        $i++
+    }
 }
 
 <## This function retrieves a list of all site collections, no matter what Web Application they belong to. The Url attribute helps the xSharePoint DSC Resource determine what Web Application they belong to. #>
-function Read-SPSitesAndWebs (){
-  
-  $spSites = Get-SPSite -Limit All
-  $siteGuid = $null
-  $siteTitle = $null
-  $dependsOnItems = @()
-  $sc = Get-SPDSCContentService
+function Read-SPSitesAndWebs ()
+{
+    $spSites = Get-SPSite -Limit All
+    $siteGuid = $null
+    $siteTitle = $null
+    $dependsOnItems = @()
+    $sc = Get-SPDSCContentService
 
-  $i = 1
-  $total = $spSites.Length
+    $i = 1
+    $total = $spSites.Length
     foreach($spSite in $spSites)
     {
         if(!$spSite.IsSiteMaster)
-        {          
+        {
             $siteTitle = $spSite.RootWeb.Title
             $siteUrl = $spSite.Url
             Write-Host "Scanning SPSite [$i/$total] {$siteUrl}"
             Read-SPSite $siteUrl
-            
+
             $dependsOnItems = @("[SPWebApplication]" + $spSite.WebApplication.Name.Replace(" ", ""))
             $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSite\MSFT_SPSite.psm1")
             Import-Module $module
@@ -1134,11 +1144,11 @@ function Read-SPSitesAndWebs (){
                     {
                         $dependsOnItems += "[SPQuotaTemplate]" + $Script:DH_SPQUOTATEMPLATE.Item($quotaTemplateName.Name)
                     }
-                }       
-                else 
+                }
+                else
                 {
                     $results.Remove("QuotaTemplate")
-                }     
+                }
             }
             if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
             {
@@ -1174,7 +1184,7 @@ function Read-SPSitesAndWebs (){
             $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
             $currentBlock = ""
             if($null -ne $ownerAlias)
-            {            
+            {
                 $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"          
             }
 
@@ -1182,10 +1192,10 @@ function Read-SPSitesAndWebs (){
             {
                 $secondaryOwner = Get-Credentials -UserName $results.SecondaryOwnerAlias
                 if($null -ne $secondaryOwner)
-                {            
+                {
                     $results.SecondaryOwnerAlias = (Resolve-Credentials -UserName $results.SecondaryOwnerAlias) + ".UserName"
                 }
-                else 
+                else
                 {
                     Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
                 }
@@ -1204,8 +1214,8 @@ function Read-SPSitesAndWebs (){
             $Script:dscConfigContent += "        }`r`n"
 
             <# Nik20170112 - There are restrictions preventing this setting from being applied if the PsDscRunAsCredential parameter is not used.
-                          Since this is only available in WMF 5, we check to see if the node farm we are extracting the configuration from is
-                          running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
+                        Since this is only available in WMF 5, we check to see if the node farm we are extracting the configuration from is
+                        running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
             if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
             {
                 Read-SPDesignerSettings($spSite.Url, "SiteCollection")
@@ -1315,7 +1325,7 @@ function Read-SPSitesAndWebs (){
                     }
                     $k++
                 }
-            }               
+            }
         }
         $i++
     }
