@@ -110,10 +110,10 @@ function Orchestrator
   Write-Host "Scanning Patch Levels..." -BackgroundColor DarkGreen -ForegroundColor White
   Read-SPProductVersions
 
-  $Script:configName = "SP-Farm.DSC"
+  $Script:configName = "SPFarmConfig"
   if($Standalone)
   {
-      $Script:configName = "SP-Standalone"
+      $Script:configName = "SPStandalone"
   }
   if($Script:ExtractionModeValue -eq 3)
   {
@@ -4227,10 +4227,10 @@ function Get-SPReverseDSC()
   Orchestrator
 
   <## Prompts the user to specify the FOLDER path where the resulting PowerShell DSC Configuration Script will be saved. #>
-  $fileName = "SP-Farm.DSC"
+  $fileName = "SPFarmConfig"
   if($Standalone)
   {
-      $fileName = "SP-Standalone"
+      $fileName = "SPStandalone"
   }
   if($Script:ExtractionModeValue -eq 3)
   {
