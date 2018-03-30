@@ -19,6 +19,7 @@
 * Aligned with SharePointDSC 2.3.0.0;
 * Fixed issue with null languages for SPManagedMetadataService;
 * Added additional verbose info during the SPTimerJob State extraction;
+* Changed the default Configuration name due to reported issue with '-' and '.';
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.5"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
