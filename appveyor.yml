@@ -1,20 +1,32 @@
-version: 1.9.0.0-{build}
-image: WMF 5
 
+#---------------------------------#
+#      environment configuration  #
+#---------------------------------#
+version: 0.0.{build}.0
+image: Visual Studio 2017
 install:
     - git clone https://github.com/PowerShell/DscResource.Tests
+    - ps: Write-Verbose -Message "PowerShell version $($PSVersionTable.PSVersion)" -Verbose
+    - ps: Import-Module "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
+    - ps: Invoke-AppveyorInstallTask
+    - ps: $mainModuleFolder = "PowerShell\Scripts"
 
-    - ps: |
-        $moduleName = 'ReverseDSC'
-        $mainModuleFolder = "Modules\$moduleName"
-        Import-Module -Name "$env:APPVEYOR_BUILD_FOLDER\DscResource.Tests\AppVeyor.psm1"
-        Invoke-AppveyorInstallTask        
+#---------------------------------#
+#      build configuration        #
+#---------------------------------#
+build: false
 
-build: off
-
+#---------------------------------#
+#      test configuration         #
+#---------------------------------#
 test_script:
-    - ps: |
-        Invoke-AppveyorTestScriptTask `
-            -Type 'Harness' `
-            -MainModulePath $mainModuleFolder `
-            -CodeCovIo
+    - ps: Invoke-AppveyorTestScriptTask -CodeCoverage -CodeCovIo -ExcludeTag @() -RunTestInOrder
+
+#---------------------------------#
+#      deployment configuration   #
+#---------------------------------#
+
+# scripts to run before deployment
+deploy_script:
+  - ps: |
+      Invoke-AppveyorAfterTestTask
