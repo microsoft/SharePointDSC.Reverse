@@ -3670,7 +3670,7 @@ function Read-SPWebAppBlockedFileTypes()
     }
 }
 
-fun(ction Read-SPFarmPropertyBag()
+function Read-SPFarmPropertyBag()
 {
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPFarmPropertyBag\MSFT_SPFarmPropertyBag.psm1")
     Import-Module $module
