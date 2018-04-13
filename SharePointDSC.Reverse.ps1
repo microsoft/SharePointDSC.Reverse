@@ -1071,7 +1071,7 @@ function Read-SPQuotaTemplate()
 
     $quotaGUID = ""
     $i = 1
-    $total = $contentservice.QuotaTemplates.Length
+    $total = $contentservice.QuotaTemplates.Count
     foreach($quota in $contentservice.QuotaTemplates)
     {
         $quotaName = $quota.Name
@@ -1649,7 +1649,7 @@ function Read-SPUsageServiceApplication()
             Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageAppFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the Usage Service Application Failover Database;"
             $results.FailOverDatabaseServer = "`$ConfigurationData.NonNodeData.UsageAppFailOverDatabaseServer"
         }
-
+        $results.DatabaseName = "`$ConfigurationData.NonNodeData.DatabaseServer"
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageLogLocation" -Value $results.UsageLogLocation -Description "Path where the Usage Logs will be stored;"
         $results.UsageLogLocation = "`$ConfigurationData.NonNodeData.UsageLogLocation"
 
@@ -1968,7 +1968,7 @@ function Set-TermStoreAdministrators($DSCBlock)
             $DSCLine = $DSCLine.Replace("TermStoreAdministrators = @(","").Replace(");","").Replace(" ","")
             $members = $DSCLine.Split(',')
 
-            $i = 0
+            $i = 1
             $total = $members.Length
             foreach($member in $members)
             {
@@ -2714,7 +2714,7 @@ function Read-SPContentDatabase()
         $results = Repair-Credentials -results $results
 
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"        
+        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
@@ -2730,9 +2730,7 @@ function Read-SPAccessServiceApp()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $serviceApps = Get-SPServiceApplication
-    $serviceApps = $serviceApps | Where-Object -FilterScript { 
-        $_.GetType().FullName -eq "Microsoft.Office.Access.Services.MossHost.AccessServicesWebServiceApplication"
-    }
+    $serviceApps = $serviceApps | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Access.Services.MossHost.AccessServicesWebServiceApplication"}
 
     $i = 1
     $total = $serviceApps.Length
@@ -2765,10 +2763,7 @@ function Read-SPAccessServices2010()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $serviceApps = Get-SPServiceApplication
-    $serviceApps = $serviceApps | Where-Object -FilterScript
-    { 
-        $_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"
-    }
+    $serviceApps = $serviceApps | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"}
 
     $i = 1
     $total = $serviceApps.Length
@@ -2797,10 +2792,7 @@ function Read-SPAccessServices2010()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $serviceApps = Get-SPServiceApplication
-    $serviceApps = $serviceApps | Where-Object -FilterScript 
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"
-    }
+    $serviceApps = $serviceApps | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"}
 
     foreach($spAccessService in $serviceApps)
     {
@@ -2875,10 +2867,7 @@ function Read-SPSearchFileType()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
     $i = 1
     $total = $ssas.Length
 
@@ -2922,10 +2911,7 @@ function Read-SPSearchIndexPartition()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
 
     $i = 1
     $total = $ssas.Length
@@ -2939,10 +2925,7 @@ function Read-SPSearchIndexPartition()
             $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
             $currentTopology = $ssa.ActiveTopology
             $indexComponents = Get-SPEnterpriseSearchComponent -SearchTopology $currentTopology | `
-                Where-Object -FilterScript 
-                {
-                    $_.GetType().Name -eq "IndexComponent" 
-                }
+                Where-Object -FilterScript {$_.GetType().Name -eq "IndexComponent"}
 
             [System.Collections.ArrayList]$indexesAlreadyScanned = @()
             $j = 1
@@ -2981,10 +2964,7 @@ function Read-SPSearchTopology()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
 
     $i = 1
     $total = $ssas.Length
@@ -2998,6 +2978,29 @@ function Read-SPSearchTopology()
             $Script:dscConfigContent += "        {`r`n"
             $params.ServiceAppName = $serviceName
             $results = Get-TargetResource @params
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchContentProcessingServers" -Value $results.ContentProcessing -Description "List of servers that will act as Search Content Processors;"
+            $results.ContentProcessing = "`$ConfigurationData.NonNodeData.SearchContentProcessingServers"
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAnalyticsProcessingServers" -Value $results.AnalyticsProcessing -Description "List of servers that will act as Search Analytics Processors;"
+            $results.AnalyticsProcessing = "`$ConfigurationData.NonNodeData.SearchAnalyticsProcessingServers"
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.IndexPartition -Description "List of servers that will host the Search Index Partitions;"
+            $results.IndexPartition = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchCrawlerServers" -Value $results.Crawler -Description "List of servers that will act as Search Crawlers;"
+            $results.Crawler = "`$ConfigurationData.NonNodeData.SearchCrawlerServers"
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAdminServers" -Value $results.Admin -Description "List of servers that will host the Search Admin Components;"
+            $results.Admin = "`$ConfigurationData.NonNodeData.SearchAdminServers"
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "QueryProcessingServers" -Value $results.QueryProcessing -Description "List of servers that will host the Search Query Components;"
+            $results.QueryProcessing = "`$ConfigurationData.NonNodeData.QueryProcessingServers"
+
+            if($results.FirstPartitionDirectory.Length -gt 1)
+            {
+                $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+            }
 
             $results = Repair-Credentials -results $results
 
@@ -3014,10 +3017,7 @@ function Read-SPSearchResultSource()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
 
     $i = 1
     $total = $ssas.Length
@@ -3076,10 +3076,7 @@ function Read-SPSearchCrawlRule()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
     $i = 1
     $total = $ssas.Length
     foreach($ssa in $ssas)
@@ -3149,10 +3146,7 @@ function Read-SPSearchCrawlerImpactRule()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
   
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript
-    {
-        $_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication" 
-    }
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
     foreach($ssa in $ssas)
     {
         if($null -ne $ssa)
@@ -3213,15 +3207,9 @@ function Read-SPHealthAnalyzerRuleState()
 {
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPHealthAnalyzerRuleState\MSFT_SPHealthAnalyzerRuleState.psm1")
     $caWebapp = Get-SPWebApplication -IncludeCentralAdministration `
-        | Where-Object -FilterScript
-        {
-            $_.IsAdministrationWebApplication
-        }
+        | Where-Object -FilterScript{$_.IsAdministrationWebApplication}
     $caWeb = Get-SPWeb($caWebapp.Url)
-    $healthRulesList = $caWeb.Lists | Where-Object -FilterScript
-    {
-        $_.BaseTemplate -eq "HealthRules"
-    }
+    $healthRulesList = $caWeb.Lists | Where-Object -FilterScript{$_.BaseTemplate -eq "HealthRules"}
 
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
@@ -3612,9 +3600,7 @@ function Read-SPUserProfileSyncConnection()
     $params = Get-DSCFakeParameters -ModulePath $module
     $userProfileServiceApps = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
     $caURL = (Get-SpWebApplication -IncludeCentralAdministration | 
-        Where-Object -FilterScript{
-            $_.IsAdministrationWebApplication -eq $true
-        }).Url
+        Where-Object -FilterScript{$_.IsAdministrationWebApplication -eq $true}).Url
     $context = Get-SPServiceContext -Site $caURL 
     try
     {
@@ -3648,9 +3634,7 @@ function Read-SPUserProfileProperty()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileProperty\MSFT_SPUserProfileProperty.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $caURL = (Get-SpWebApplication -IncludeCentralAdministration | Where-Object -FilterScript{
-        $_.IsAdministrationWebApplication -eq $true
-    }).Url
+    $caURL = (Get-SpWebApplication -IncludeCentralAdministration | Where-Object -FilterScript{$_.IsAdministrationWebApplication -eq $true}).Url
     $context = Get-SPServiceContext -Site $caURL 
     try 
     {
@@ -3716,9 +3700,7 @@ function Read-SPUserProfileSection()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileSection\MSFT_SPUserProfileSection.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $caURL = (Get-SpWebApplication -IncludeCentralAdministration | Where-Object -FilterScript {
-            $_.IsAdministrationWebApplication -eq $true
-    }).Url
+    $caURL = (Get-SpWebApplication -IncludeCentralAdministration | Where-Object -FilterScript{$_.IsAdministrationWebApplication -eq $true}).Url
     $context = Get-SPServiceContext -Site $caURL 
     try
     {
@@ -3756,22 +3738,25 @@ function Read-SPBlobCacheSettings()
     {
         $alternateUrls = $webApp.AlternateUrl
 
-        <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
-                with a different zone. Therefore we are limited to keeping one entry only. #>
-        $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.WebAppUrl = $webApp.Url
-        $params.Zone = $alternateUrls[0].Zone
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
+        if($alternateUrls.Length -ge 1)
+        {
+            <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
+                    with a different zone. Therefore we are limited to keeping one entry only. #>
+            $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.WebAppUrl = $webApp.Url
+            $params.Zone = $alternateUrls[0].Zone
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
-        $results.Location = "`$ConfigurationData.NonNodeData.BlobCacheLocation"
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
+            $results.Location = "`$ConfigurationData.NonNodeData.BlobCacheLocation"
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "        }`r`n"
+        }
     }
 }
 
