@@ -22,7 +22,7 @@
 * Changed the default Configuration name due to reported issue with '-' and '.';
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.5"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.6"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
 
 <# 
 
@@ -48,6 +48,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
+$Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
@@ -1776,6 +1777,7 @@ function Read-UserProfileServiceApplication ($modulePath, $params)
         try
         {
             $catch = new-object Microsoft.Office.Server.UserProfiles.UserProfileManager($context)
+            $catch = $null
         }
         catch
         {
@@ -1792,46 +1794,54 @@ function Read-UserProfileServiceApplication ($modulePath, $params)
             $total = $ups.Length
             foreach($upsInstance in $ups)
             {
-                $serviceName = $upsInstance.DisplayName
-                Write-Host "Scanning User Profile Service Application [$i/$total] {$serviceName}"
-
-                $params.Name = $serviceName
-                $Script:dscConfigContent += "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-
-                if($null -eq $params.InstallAccount)
+                try
                 {
-                    $params.Remove("InstallAccount")
-                }
+                    $serviceName = $upsInstance.DisplayName
+                    Write-Host "Scanning User Profile Service Application [$i/$total] {$serviceName}"
 
-                $results = Get-TargetResource @params
-                if($results.Contains("MySiteHostLocation") -and $results.Get_Item("MySiteHostLocation") -eq "*")
+                    $params.Name = $serviceName
+                    $Script:dscConfigContent += "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+
+                    if($null -eq $params.InstallAccount)
+                    {
+                        $params.Remove("InstallAccount")
+                    }
+
+                    $results = Get-TargetResource @params
+                    if($results.Contains("MySiteHostLocation") -and $results.Get_Item("MySiteHostLocation") -eq "*")
+                    {
+                        $results.Remove("MySiteHostLocation")
+                    }
+
+                    if($results.Contains("InstallAccount"))
+                    {
+                        $results.Remove("InstallAccount")
+                    }
+                    $results = Repair-Credentials -results $results
+                
+                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SyncDBServer" -Value $results.SyncDBServer -Description "Name of the User Profile Service Sync Database Server;"
+                    $results.SyncDBServer = "`$ConfigurationData.NonNodeData.SyncDBServer"
+
+                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "ProfileDBServer" -Value $results.ProfileDBServer -Description "Name of the User Profile Service Profile Database Server;"
+                    $results.ProfileDBServer = "`$ConfigurationData.NonNodeData.ProfileDBServer"
+
+                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
+                    $results.SocialDBServer = "`$ConfigurationData.NonNodeData.SocialDBServer"
+
+                    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SocialDBServer"
+                    $Script:dscConfigContent += $currentBlock
+                    $Script:dscConfigContent += "        }`r`n"
+                    $i++
+                }
+                catch
                 {
-                    $results.Remove("MySiteHostLocation")
+                    $Script:ErrorLog += "[User Profile Service Application]" + $upsInstance.DisplayName + "`r`n"
+                    $Script:ErrorLog += "$_`r`n`r`n"
                 }
-
-                if($results.Contains("InstallAccount"))
-                {
-                    $results.Remove("InstallAccount")
-                }
-                $results = Repair-Credentials -results $results
-              
-                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SyncDBServer" -Value $results.SyncDBServer -Description "Name of the User Profile Service Sync Database Server;"
-                $results.SyncDBServer = "`$ConfigurationData.NonNodeData.SyncDBServer"
-
-                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "ProfileDBServer" -Value $results.ProfileDBServer -Description "Name of the User Profile Service Profile Database Server;"
-                $results.ProfileDBServer = "`$ConfigurationData.NonNodeData.ProfileDBServer"
-
-                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
-                $results.SocialDBServer = "`$ConfigurationData.NonNodeData.SocialDBServer"
-
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
-                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
-                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SocialDBServer"
-                $Script:dscConfigContent += $currentBlock
-                $Script:dscConfigContent += "        }`r`n"
-                $i++
             }
         }
     }
@@ -1851,56 +1861,64 @@ function Read-SecureStoreServiceApplication()
     $total = $ssas
     foreach($ssa in $ssas)
     {
-        $serviceName = $ssa.DisplayName
-        Write-Host "Scanning Secure Store Service Application [$i/$total] {$serviceName}"
-
-        $params.Name = $serviceName
-        $Script:dscConfigContent += "        SPSecureStoreServiceApp " + $ssa.Name.Replace(" ", "") + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results = Get-TargetResource @params
-
-        <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
-        $secStoreDBs = Get-SPDatabase | Where-Object{$_.Type -eq "Microsoft.Office.SecureStoreService.Server.SecureStoreServiceDatabase"}
-        $results.DatabaseName = $secStoreDBs.DisplayName
-        $results.DatabaseServer = $secStoreDBs.NormalizedDataSource
-
-        <# WA - Can't dynamically retrieve value from the Secure Store at the moment #>
-        if(!$results.Contains("AuditingEnabled"))
+        try
         {
-            $results.Add("AuditingEnabled", $true)
-        }
+            $serviceName = $ssa.DisplayName
+            Write-Host "Scanning Secure Store Service Application [$i/$total] {$serviceName}"
 
-        if($results.Contains("InstallAccount"))
+            $params.Name = $serviceName
+            $Script:dscConfigContent += "        SPSecureStoreServiceApp " + $ssa.Name.Replace(" ", "") + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $results = Get-TargetResource @params
+
+            <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
+            $secStoreDBs = Get-SPDatabase | Where-Object{$_.Type -eq "Microsoft.Office.SecureStoreService.Server.SecureStoreServiceDatabase"}
+            $results.DatabaseName = $secStoreDBs.DisplayName
+            $results.DatabaseServer = $secStoreDBs.NormalizedDataSource
+
+            <# WA - Can't dynamically retrieve value from the Secure Store at the moment #>
+            if(!$results.Contains("AuditingEnabled"))
+            {
+                $results.Add("AuditingEnabled", $true)
+            }
+
+            if($results.Contains("InstallAccount"))
+            {
+                $results.Remove("InstallAccount")
+            }
+
+            $results = Repair-Credentials -results $results
+
+            $foundFailOver = $false
+            if($null -eq $results.FailOverDatabaseServer)
+            {
+                $results.Remove("FailOverDatabaseServer")
+            }
+            else
+            {
+                $foundFailOver = $true
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SecureStoreFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the SQL Server that hosts the FailOver database for your SharePoint Farm's Secure Store Service Application;"
+                $results.FailOverDatabaseServer = "`$ConfigurationData.NonNodeData.SecureStoreFailOverDatabaseServer"
+            }
+
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            if($foundFailOver)
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FailOverDatabaseServer"
+            }
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "        }`r`n"        
+            $i++
+        }
+        catch
         {
-            $results.Remove("InstallAccount")
+            $Script:ErrorLog += "[Secure Store Service Application]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
-
-        $results = Repair-Credentials -results $results
-
-        $foundFailOver = $false
-        if($null -eq $results.FailOverDatabaseServer)
-        {
-            $results.Remove("FailOverDatabaseServer")
-        }
-        else
-        {
-            $foundFailOver = $true
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SecureStoreFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the SQL Server that hosts the FailOver database for your SharePoint Farm's Secure Store Service Application;"
-            $results.FailOverDatabaseServer = "`$ConfigurationData.NonNodeData.SecureStoreFailOverDatabaseServer"
-        }
-
-        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-        if($foundFailOver)
-        {
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FailOverDatabaseServer"
-        }
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"        
-        $i++
     }
 }
 
@@ -1918,37 +1936,45 @@ function Read-ManagedMetadataServiceApplication()
         $total = $mms.Length
         foreach($mmsInstance in $mms)
         {
-            if($mmsInstance -ne $null)
+            try
             {
-                $serviceName = $mmsInstance.Name
-                Write-Host "Scanning Managed Metadata Service [$i/$total] {$serviceName}"
-
-                $params.Name = $serviceName
-                $Script:dscConfigContent += "        SPManagedMetaDataServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $results = Get-TargetResource @params
-
-                <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
-                $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
-                $results = Repair-Credentials -results $results
-
-                if(!$results.Languages)
+                if($mmsInstance -ne $null)
                 {
-                    $results.Remove("Languages")
+                    $serviceName = $mmsInstance.Name
+                    Write-Host "Scanning Managed Metadata Service [$i/$total] {$serviceName}"
+
+                    $params.Name = $serviceName
+                    $Script:dscConfigContent += "        SPManagedMetaDataServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $results = Get-TargetResource @params
+
+                    <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
+                    $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
+                    $results = Repair-Credentials -results $results
+
+                    if(!$results.Languages)
+                    {
+                        $results.Remove("Languages")
+                    }
+
+                    $results.TermStoreAdministrators = Set-TermStoreAdministratorsBlock $results.TermStoreAdministrators
+
+                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+                    $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+                    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Set-TermStoreAdministrators $currentBlock
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                    $Script:dscConfigContent += $currentBlock
+                    $Script:dscConfigContent += "        }`r`n"
                 }
-
-                $results.TermStoreAdministrators = Set-TermStoreAdministratorsBlock $results.TermStoreAdministrators
-
-                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $currentBlock = Set-TermStoreAdministrators $currentBlock
-                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-                $Script:dscConfigContent += $currentBlock
-                $Script:dscConfigContent += "        }`r`n"
+                $i++
             }
-            $i++
+            catch
+            {
+                $Script:ErrorLog += "[Managed Metadata Service Application]" + $mmsInstance.DisplayName + "`r`n"
+                $Script:ErrorLog += "$_`r`n`r`n"
+            }
         }
     }
 }
@@ -2029,31 +2055,39 @@ function Read-SPWordAutomationServiceApplication()
     $total = $was.Length
     foreach($wa in $was)
     {
-        if($wa -ne $null)
+        try
         {
-            $serviceName = $wa.Name
-            Write-Host "Scanning Word Automation Service Application [$i/$total] {$serviceName}"
-
-            $params.Name = $serviceName 
-            $Script:dscConfigContent += "        SPWordAutomationServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $serviceName = $wa.Name
+                Write-Host "Scanning Word Automation Service Application [$i/$total] {$serviceName}"
+
+                $params.Name = $serviceName 
+                $Script:dscConfigContent += "        SPWordAutomationServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += $currentBlock
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-            $Script:dscConfigContent += $currentBlock
-            $Script:dscConfigContent += "        }`r`n"
+            $i++
         }
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[Managed Metadata Service Application]" + $wa.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -2069,25 +2103,33 @@ function Read-SPVisioServiceApplication()
     $total = $was.Length
     foreach($wa in $was)
     {
-        if($wa -ne $null)
+        try
         {
-            $serviceName = $wa.Name
-            Write-Host "Scanning Visio Service Application [$i/$total] {$serviceName}"
-
-            $params.Name = $serviceName
-            $Script:dscConfigContent += "        SPVisioServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $serviceName = $wa.Name
+                Write-Host "Scanning Visio Service Application [$i/$total] {$serviceName}"
+
+                $params.Name = $serviceName
+                $Script:dscConfigContent += "        SPVisioServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+            $i++
         }
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[Visio Graphics Service Application]" + $wa.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -2103,39 +2145,47 @@ function Read-SPTrustedIdentityTokenIssuer()
     $total = $tips.Length
     foreach($tip in $tips)
     {
-        $tokenName = $tip.Name
-        Write-Host "Scanning Trusted Identity Token Issuer [$i/$total] {$tokenName}"
-
-        $params.Name = $tokenName
-        $params.Description = $tip.Description
-        $Script:dscConfigContent += "        SPTrustedIdentityTokenIssuer " + [System.Guid]::NewGuid().toString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $fake = New-CimInstance -ClassName Win32_Process -Property @{Handle=0} -Key Handle -ClientOnly
-
-        if(!$params.Contains("ClaimsMappings"))
+        try
         {
-            $params.Add("ClaimsMappings", $fake)
-        }
-        $results = Get-TargetResource @params
+            $tokenName = $tip.Name
+            Write-Host "Scanning Trusted Identity Token Issuer [$i/$total] {$tokenName}"
 
-        foreach($ctm in $results.ClaimsMappings)
-        {
-            $ctmResult = Get-SPClaimTypeMapping -params $ctm
-            $results.ClaimsMappings = $ctmResult
-        }
-        if($null -ne $results.Get_Item("SigningCertificateThumbprint") -and $results.Contains("SigningCertificateFilePath"))
-        {
-            $results.Remove("SigningCertificateFilePath")
-        }
+            $params.Name = $tokenName
+            $params.Description = $tip.Description
+            $Script:dscConfigContent += "        SPTrustedIdentityTokenIssuer " + [System.Guid]::NewGuid().toString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $fake = New-CimInstance -ClassName Win32_Process -Property @{Handle=0} -Key Handle -ClientOnly
 
-        if($results.Contains("InstallAccount"))
-        {
-            $results.Remove("InstallAccount")
+            if(!$params.Contains("ClaimsMappings"))
+            {
+                $params.Add("ClaimsMappings", $fake)
+            }
+            $results = Get-TargetResource @params
+
+            foreach($ctm in $results.ClaimsMappings)
+            {
+                $ctmResult = Get-SPClaimTypeMapping -params $ctm
+                $results.ClaimsMappings = $ctmResult
+            }
+            if($null -ne $results.Get_Item("SigningCertificateThumbprint") -and $results.Contains("SigningCertificateFilePath"))
+            {
+                $results.Remove("SigningCertificateFilePath")
+            }
+
+            if($results.Contains("InstallAccount"))
+            {
+                $results.Remove("InstallAccount")
+            }
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+            $i++
         }
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[Trusted Identity Token Issuer]" + $tip.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -2148,20 +2198,28 @@ function Read-SPWorkManagementServiceApplication()
     $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Work Management Service Application"}
     foreach($wa in $was)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.Name = $wa.Name
-            $Script:dscConfigContent += "        SPWorkManagementServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.Name = $wa.Name
+                $Script:dscConfigContent += "        SPWorkManagementServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Work Management Service Application]" + $wa.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2177,34 +2235,42 @@ function Read-SPTimerJobState
     $i = 0;
     foreach($timer in $spTimers)
     {
-        $i++
-        Write-Host "Scanning Timer Job {"$timer.Name"}[$i/$totalTimers]..."
-        if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
+        try
         {
-            $params.TypeName = $timer.TypeName
-            if($null -ne $timer.WebApplication)
+            $i++
+            Write-Host "Scanning Timer Job {"$timer.Name"}[$i/$totalTimers]..."
+            if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
             {
-                $params.WebAppUrl = $timer.WebApplication.Url;
-            }
-            else
-            {
-                $params.WebAppUrl = "N/A";
-            }
+                $params.TypeName = $timer.TypeName
+                if($null -ne $timer.WebApplication)
+                {
+                    $params.WebAppUrl = $timer.WebApplication.Url;
+                }
+                else
+                {
+                    $params.WebAppUrl = "N/A";
+                }
 
-            <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
-            $Script:dscConfigContent += "<#`r`n"
-            $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
+                <# TODO: Remove comment tags when version 2.0.0.0 of SharePointDSC gets released;#>
+                $Script:dscConfigContent += "<#`r`n"
+                $Script:dscConfigContent += "        SPTimerJobState " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
 
-            if($results.Contains("InstallAccount"))
-            {
-                $results.Remove("InstallAccount")
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+                $Script:dscConfigContent += "#>`r`n"          
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
-            $Script:dscConfigContent += "#>`r`n"          
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Timer Job]" + $timer.TypeName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2218,27 +2284,35 @@ function Read-SPPerformancePointServiceApplication()
     $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "PerformancePoint Service Application"}
     foreach($wa in $was)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.Name = $wa.Name
-            $Script:dscConfigContent += "        SPPerformancePointServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.Name = $wa.Name
+                $Script:dscConfigContent += "        SPPerformancePointServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+
+                $Script:dscConfigContent += $currentBlock
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-
-            $Script:dscConfigContent += $currentBlock
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[PerformancePoint Service Application]" + $wa.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2252,20 +2326,28 @@ function Read-SPWebAppWorkflowSettings()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.Url = $wa.Url
-            $Script:dscConfigContent += "        SPWebAppWorkflowSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.Url = $wa.Url
+                $Script:dscConfigContent += "        SPWebAppWorkflowSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Web Application Workflow Settings]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2279,21 +2361,29 @@ function Read-SPWebAppThrottlingSettings()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.Url = $wa.Url
-            $Script:dscConfigContent += "        SPWebAppThrottlingSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.Url = $wa.Url
+                $Script:dscConfigContent += "        SPWebAppThrottlingSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results.HappyHour = Get-SPWebAppHappyHour -params $results.HappyHour
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results.HappyHour = Get-SPWebAppHappyHour -params $results.HappyHour
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Web Application Throttling Settings]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2307,20 +2397,28 @@ function Read-SPWebAppSiteUseAndDeletion()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try 
         {
-            $params.Url = $wa.Url
-            $Script:dscConfigContent += "        SPWebAppSiteUseAndDeletion " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.Url = $wa.Url
+                $Script:dscConfigContent += "        SPWebAppSiteUseAndDeletion " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Web Application Site Use and Deletion]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2334,36 +2432,44 @@ function Read-SPWebApplicationExtension()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.WebAppUrl = $wa.Url
-
-            for($i = 0; $i -lt $zones.Length; $i++)
+            if($wa -ne $null)
             {
-                if($null -ne $wa.IisSettings[$zones[$i]])
-                {
-                    $params.Zone = $zones[$i]
-                    $Script:dscConfigContent += "        SPWebApplicationExtension " + [System.Guid]::NewGuid().toString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $results = Get-TargetResource @params
+                $params.WebAppUrl = $wa.Url
 
-                    if($results.Contains("InstallAccount"))
+                for($i = 0; $i -lt $zones.Length; $i++)
+                {
+                    if($null -ne $wa.IisSettings[$zones[$i]])
                     {
-                        $results.Remove("InstallAccount")
+                        $params.Zone = $zones[$i]
+                        $Script:dscConfigContent += "        SPWebApplicationExtension " + [System.Guid]::NewGuid().toString() + "`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $results = Get-TargetResource @params
+
+                        if($results.Contains("InstallAccount"))
+                        {
+                            $results.Remove("InstallAccount")
+                        }
+                        if("" -eq $results.HostHeader)
+                        {
+                            $results.Remove("HostHeader")
+                        }
+                        if($null -eq $results.AuthenticationProvider)
+                        {
+                            $results.Remove("AuthenticationProvider")
+                        }
+                        $results = Repair-Credentials -results $results
+                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                        $Script:dscConfigContent += "        }`r`n"
                     }
-                    if("" -eq $results.HostHeader)
-                    {
-                        $results.Remove("HostHeader")
-                    }
-                    if($null -eq $results.AuthenticationProvider)
-                    {
-                        $results.Remove("AuthenticationProvider")
-                    }
-                    $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                    $Script:dscConfigContent += "        }`r`n"
                 }
             }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Web Application Extensions]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2377,29 +2483,36 @@ function Read-SPWebAppPermissions()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try {
+            if($wa -ne $null)
+            {
+                $params.WebAppUrl = $wa.Url
+                $params.Remove("ListPermissions")
+                $params.Remove("SitePermissions")
+                $params.Remove("PersonalPermissions")
+                $Script:dscConfigContent += "        SPWebAppPermissions " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+
+                <# Fix an issue with SP DSC (forward) 1.6.0.0 #>
+                if($results.WebAppUrl -eq "url")
+                {
+                    $results.WebAppUrl = $wa.Url
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }
+        }
+        catch
         {
-            $params.WebAppUrl = $wa.Url
-            $params.Remove("ListPermissions")
-            $params.Remove("SitePermissions")
-            $params.Remove("PersonalPermissions")
-            $Script:dscConfigContent += "        SPWebAppPermissions " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
-            {
-                $results.Remove("InstallAccount")
-            }
-
-            <# Fix an issue with SP DSC (forward) 1.6.0.0 #>
-            if($results.WebAppUrl -eq "url")
-            {
-                $results.WebAppUrl = $wa.Url
-            }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+            $Script:ErrorLog += "[Web Application Permissions]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2413,21 +2526,29 @@ function Read-SPWebAppProxyGroup()
     $webApps = Get-SPWebApplication
     foreach($wa in $webApps)
     {
-        if($wa -ne $null)
+        try
         {
-            $params.WebAppUrl = $wa.Url
-            $params.ServiceAppProxyGroup = $wa.ServiceApplicationProxyGroup.FriendlyName
-            $Script:dscConfigContent += "        SPWebAppProxyGroup " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-
-            if($results.Contains("InstallAccount"))
+            if($wa -ne $null)
             {
-                $results.Remove("InstallAccount")
+                $params.WebAppUrl = $wa.Url
+                $params.ServiceAppProxyGroup = $wa.ServiceApplicationProxyGroup.FriendlyName
+                $Script:dscConfigContent += "        SPWebAppProxyGroup " + [System.Guid]::NewGuid().toString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Web Application Proxy Group]" + $wa.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2454,28 +2575,36 @@ function Read-BCSServiceApplication ($modulePath, $params)
 
     foreach($bcsaInstance in $bcsa)
     {
-        if($bcsaInstance -ne $null)
+        try 
         {
-            $Script:dscConfigContent += "        SPBCSServiceApp " + $bcsaInstance.Name.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $params.Name = $bcsaInstance.DisplayName
-            $results = Get-TargetResource @params
-
-            <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
-            $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
-
-            if($results.Contains("InstallAccount"))
+            if($bcsaInstance -ne $null)
             {
-                $results.Remove("InstallAccount")
-            }
-            $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += "        SPBCSServiceApp " + $bcsaInstance.Name.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.Name = $bcsaInstance.DisplayName
+                $results = Get-TargetResource @params
 
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-            $Script:dscConfigContent += $currentBlock
-            $Script:dscConfigContent += "        }`r`n"
+                <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
+                $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+                $results = Repair-Credentials -results $results
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += $currentBlock
+                $Script:dscConfigContent += "        }`r`n"
+            }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Business Connectivity Service Application]" + $bcsaInstance.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -2499,94 +2628,102 @@ function Read-SearchServiceApplication()
     $total = $searchSA.Length
     foreach($searchSAInstance in $searchSA)
     {
-        if($searchSAInstance -ne $null)
+        try
         {
-            $serviceName = $searchSAInstance.Name
-            Write-Host "Scanning Search Service Application [$i/$total] {$serviceName}"
-            $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchServiceApp\MSFT_SPSearchServiceApp.psm1")
-            Import-Module $module
-            $params = Get-DSCFakeParameters -ModulePath $module
-
-            $Script:dscConfigContent += "        SPSearchServiceApp " + $searchSAInstance.Name.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $params.Name = $serviceName
-            $results = Get-TargetResource @params
-            if($results.Get_Item("CloudIndex") -eq $false)
+            if($searchSAInstance -ne $null)
             {
-                $results.Remove("CloudIndex")
-            }
+                $serviceName = $searchSAInstance.Name
+                Write-Host "Scanning Search Service Application [$i/$total] {$serviceName}"
+                $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchServiceApp\MSFT_SPSearchServiceApp.psm1")
+                Import-Module $module
+                $params = Get-DSCFakeParameters -ModulePath $module
 
-            if($results.Contains("InstallAccount"))
-            {
-                $results.Remove("InstallAccount")
-            }
-
-            if($null -eq $results.SearchCenterUrl)
-            {
-                $results.Remove("SearchCenterUrl")
-            }
-
-            <# Nik20170111 - Fix a bug in 1.5.0.0 where DatabaseName and DatabaseServer is not properly returned #>
-            $results["DatabaseName"] = $searchSAInstance.SearchAdminDatabase.Name
-            $results["DatabaseServer"] = $searchSAInstance.SearchAdminDatabase.Server.Name
-            $results = Repair-Credentials -results $results
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-            $Script:dscConfigContent += $currentBlock 
-           $Script:dscConfigContent += "        }`r`n"
-
-            #region Search Content Sources
-            $moduleContentSource = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchContentSource\MSFT_SPSearchContentSource.psm1")
-            Import-Module $moduleContentSource
-            $paramsContentSource = Get-DSCFakeParameters -ModulePath $moduleContentSource
-            $contentSources = Get-SPEnterpriseSearchCrawlContentSource -SearchApplication $searchSAInstance.Name
-
-            $j = 1
-            $totalCS = $contentSources.Length
-            foreach($contentSource in $contentSources)
-            {
-                $csName = $contentSource.Name
-                Write-Host "    -> Scanning Content Source [$j/$totalCS] {$csName}"
-
-                $sscsGuid = [System.Guid]::NewGuid().toString()
-
-                $paramsContentSource.Name = $csName
-                $paramsContentSource.ServiceAppName  = $serviceName
-
-                $source = Get-SPEnterpriseSearchCrawlContentSource -SearchApplication $paramsContentSource.ServiceAppName `
-                                                                -Identity $paramsContentSource.Name `
-                                                                -ErrorAction SilentlyContinue
-
-                if(!$source.Type -eq "CustomRepository")
+                $Script:dscConfigContent += "        SPSearchServiceApp " + $searchSAInstance.Name.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.Name = $serviceName
+                $results = Get-TargetResource @params
+                if($results.Get_Item("CloudIndex") -eq $false)
                 {
-                    $Script:dscConfigContent += "        SPSearchContentSource " + $contentSource.Name.Replace(" ", "") + $sscsGuid + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-
-                    $resultsContentSource = Get-TargetResource @paramsContentSource                
-
-                    $searchScheduleModulePath = Resolve-Path ($Script:SPDSCPath + "\Modules\SharePointDsc.Search\SPSearchContentSource.Schedules.psm1")            
-                    Import-Module -Name $searchScheduleModulePath
-                    # TODO: Figure out way to properly pass CimInstance objects and then add the schedules back;
-                    $incremental = Get-SPDSCSearchCrawlSchedule -Schedule $contentSource.IncrementalCrawlSchedule
-                    $full = Get-SPDSCSearchCrawlSchedule -Schedule $contentSource.FullCrawlSchedule
-
-                    $resultsContentSource.IncrementalSchedule = Get-SPCrawlSchedule $incremental
-                    $resultsContentSource.FullSchedule = Get-SPCrawlSchedule $full
-
-                    $resultsContentsource = Repair-Credentials -results $resultsContentSource
-
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsContentSource -ModulePath $moduleContentSource
-                    $Script:dscConfigContent += "        }`r`n"
+                    $results.Remove("CloudIndex")
                 }
-                $j++
+
+                if($results.Contains("InstallAccount"))
+                {
+                    $results.Remove("InstallAccount")
+                }
+
+                if($null -eq $results.SearchCenterUrl)
+                {
+                    $results.Remove("SearchCenterUrl")
+                }
+
+                <# Nik20170111 - Fix a bug in 1.5.0.0 where DatabaseName and DatabaseServer is not properly returned #>
+                $results["DatabaseName"] = $searchSAInstance.SearchAdminDatabase.Name
+                $results["DatabaseServer"] = $searchSAInstance.SearchAdminDatabase.Server.Name
+                $results = Repair-Credentials -results $results
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += $currentBlock 
+                $Script:dscConfigContent += "        }`r`n"
+
+                #region Search Content Sources
+                $moduleContentSource = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchContentSource\MSFT_SPSearchContentSource.psm1")
+                Import-Module $moduleContentSource
+                $paramsContentSource = Get-DSCFakeParameters -ModulePath $moduleContentSource
+                $contentSources = Get-SPEnterpriseSearchCrawlContentSource -SearchApplication $searchSAInstance.Name
+
+                $j = 1
+                $totalCS = $contentSources.Length
+                foreach($contentSource in $contentSources)
+                {
+                    $csName = $contentSource.Name
+                    Write-Host "    -> Scanning Content Source [$j/$totalCS] {$csName}"
+
+                    $sscsGuid = [System.Guid]::NewGuid().toString()
+
+                    $paramsContentSource.Name = $csName
+                    $paramsContentSource.ServiceAppName  = $serviceName
+
+                    $source = Get-SPEnterpriseSearchCrawlContentSource -SearchApplication $paramsContentSource.ServiceAppName `
+                                                                    -Identity $paramsContentSource.Name `
+                                                                    -ErrorAction SilentlyContinue
+
+                    if(!$source.Type -eq "CustomRepository")
+                    {
+                        $Script:dscConfigContent += "        SPSearchContentSource " + $contentSource.Name.Replace(" ", "") + $sscsGuid + "`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+
+                        $resultsContentSource = Get-TargetResource @paramsContentSource                
+
+                        $searchScheduleModulePath = Resolve-Path ($Script:SPDSCPath + "\Modules\SharePointDsc.Search\SPSearchContentSource.Schedules.psm1")            
+                        Import-Module -Name $searchScheduleModulePath
+                        # TODO: Figure out way to properly pass CimInstance objects and then add the schedules back;
+                        $incremental = Get-SPDSCSearchCrawlSchedule -Schedule $contentSource.IncrementalCrawlSchedule
+                        $full = Get-SPDSCSearchCrawlSchedule -Schedule $contentSource.FullCrawlSchedule
+
+                        $resultsContentSource.IncrementalSchedule = Get-SPCrawlSchedule $incremental
+                        $resultsContentSource.FullSchedule = Get-SPCrawlSchedule $full
+
+                        $resultsContentsource = Repair-Credentials -results $resultsContentSource
+
+                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsContentSource -ModulePath $moduleContentSource
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                    $j++
+                }
+                #endregion
             }
-            #endregion
+            $i++ 
         }
-        $i++ 
+        catch
+        {
+            $Script:ErrorLog += "[Search Service Application]" + $searchSAInstance.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -3585,14 +3722,22 @@ function Read-SPUserProfileServiceAppPermissions()
 
     foreach($proxy in $proxies)
     {
-        $params.ProxyName = $proxy.Name
-        $Script:dscConfigContent += "        SPUserProfileServiceAppPermissions " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results = Get-TargetResource @params
+        try 
+        {
+            $params.ProxyName = $proxy.Name
+            $Script:dscConfigContent += "        SPUserProfileServiceAppPermissions " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"        
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[User Profile Service Application Permissions]" + $proxy.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -3614,22 +3759,33 @@ function Read-SPUserProfileSyncConnection()
             $connections = $userProfileConfigManager.ConnectionManager
             foreach($conn in $connections)
             { 
-                $params.Name = $conn.DisplayName
-                $params.ConnectionCredentials = $Global:spFarmAccount
-                $params.UserProfileService = $userProfileServiceApps[0].Name
-                $results = Get-TargetResource @params
-                if($null -ne $results)
+                try
                 {
-                    $Script:dscConfigContent += "        SPUserProfileSyncConnection  " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                    $Script:dscConfigContent += "        }`r`n"    
+                    $params.Name = $conn.DisplayName
+                    $params.ConnectionCredentials = $Global:spFarmAccount
+                    $params.UserProfileService = $userProfileServiceApps[0].Name
+                    $results = Get-TargetResource @params
+                    if($null -ne $results)
+                    {
+                        $Script:dscConfigContent += "        SPUserProfileSyncConnection  " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $results = Repair-Credentials -results $results
+                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                        $Script:dscConfigContent += "        }`r`n"    
+                    }
+                }
+                catch
+                {
+                    $Script:ErrorLog += "[User Profile Sync Connection]" + $conn.DisplayName + "`r`n"
+                    $Script:ErrorLog += "$_`r`n`r`n"
                 }
             }
         }
     }
-    catch {}
+    catch
+    {
+
+    }
 }
 
 function Read-SPUserProfileProperty()
@@ -3652,46 +3808,54 @@ function Read-SPUserProfileProperty()
         if($null -ne $userProfileConfigManager.ConnectionManager.PropertyMapping)
         {
             foreach($property in $properties)
-            { 
-                $params.Name = $property.Name
+            {
+                try
+                {
+                    $params.Name = $property.Name
 
-                $params.UserProfileService = $userProfileServiceApp[0].DisplayName
-                $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $results = Get-TargetResource @params
+                    $params.UserProfileService = $userProfileServiceApp[0].DisplayName
+                    $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $results = Get-TargetResource @params
 
-                if($results.Type.ToString().ToLower() -eq "string (single value)")
-                {
-                    $results.Type = "String"
-                }
-                elseif($results.Type.ToString().ToLower() -eq "string (multi value)")
-                {
-                    $results.Type = "StringMultiValue"
-                }
-                elseif($results.Type.ToString().ToLower() -eq "unique identifier")
-                {
-                    $results.Type = "Guid"
-                }
-                elseif($results.Type.ToString().ToLower() -eq "big integer")
-                {
-                    $results.Type = "BigInteger"
-                }
-                elseif($results.Type.ToString().ToLower() -eq "date time")
-                {
-                    $results.Type = "DateTime"
-                }
+                    if($results.Type.ToString().ToLower() -eq "string (single value)")
+                    {
+                        $results.Type = "String"
+                    }
+                    elseif($results.Type.ToString().ToLower() -eq "string (multi value)")
+                    {
+                        $results.Type = "StringMultiValue"
+                    }
+                    elseif($results.Type.ToString().ToLower() -eq "unique identifier")
+                    {
+                        $results.Type = "Guid"
+                    }
+                    elseif($results.Type.ToString().ToLower() -eq "big integer")
+                    {
+                        $results.Type = "BigInteger"
+                    }
+                    elseif($results.Type.ToString().ToLower() -eq "date time")
+                    {
+                        $results.Type = "DateTime"
+                    }
 
-                <# WA - Bug in SPDSC 1.7.0.0 where param returned is named UserProfileServiceAppName instead of
-                        just UserProfileService. #>
-                if($null -ne $results.Get_Item("UserProfileServiceAppName"))
-                {
-                    $results.Add("UserProfileService", $results.UserProfileServiceAppName)
-                    $results.Remove("UserProfileServiceAppName")
-                }
+                    <# WA - Bug in SPDSC 1.7.0.0 where param returned is named UserProfileServiceAppName instead of
+                            just UserProfileService. #>
+                    if($null -ne $results.Get_Item("UserProfileServiceAppName"))
+                    {
+                        $results.Add("UserProfileService", $results.UserProfileServiceAppName)
+                        $results.Remove("UserProfileServiceAppName")
+                    }
 
-                $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"        
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                }
+                catch
+                {
+                    $Script:ErrorLog += "[User Profile Property]" + $property.Name + "`r`n"
+                    $Script:ErrorLog += "$_`r`n`r`n"
+                }
             }
         }
     }
@@ -3716,15 +3880,23 @@ function Read-SPUserProfileSection()
 
         foreach($section in $sections)
         {
-            $params.Name = $section.Name
-            $params.UserProfileService = $userProfileServiceApp[0].DisplayName
-            $Script:dscConfigContent += "        SPUserProfileSection " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
+            try
+            {
+                $params.Name = $section.Name
+                $params.UserProfileService = $userProfileServiceApp[0].DisplayName
+                $Script:dscConfigContent += "        SPUserProfileSection " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
 
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"        
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }
+            catch
+            {
+                $Script:ErrorLog += "[User Profile Section]" + $section.Name + "`r`n"
+                $Script:ErrorLog += "$_`r`n`r`n"
+            }
         }
     }
     catch {}
@@ -3739,26 +3911,34 @@ function Read-SPBlobCacheSettings()
     $webApps = Get-SPWebApplication
     foreach($webApp in $webApps)
     {
-        $alternateUrls = $webApp.AlternateUrl
-
-        if($alternateUrls.Length -ge 1)
+        try
         {
-            <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
-                    with a different zone. Therefore we are limited to keeping one entry only. #>
-            $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $params.WebAppUrl = $webApp.Url
-            $params.Zone = $alternateUrls[0].Zone
-            $results = Get-TargetResource @params
-            $results = Repair-Credentials -results $results
+            $alternateUrls = $webApp.AlternateUrl
 
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
-            $results.Location = "`$ConfigurationData.NonNodeData.BlobCacheLocation"
+            if($alternateUrls.Length -ge 1)
+            {
+                <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
+                        with a different zone. Therefore we are limited to keeping one entry only. #>
+                $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.WebAppUrl = $webApp.Url
+                $params.Zone = $alternateUrls[0].Zone
+                $results = Get-TargetResource @params
+                $results = Repair-Credentials -results $results
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
-            $Script:dscConfigContent += $currentBlock
-            $Script:dscConfigContent += "        }`r`n"
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
+                $results.Location = "`$ConfigurationData.NonNodeData.BlobCacheLocation"
+
+                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
+                $Script:dscConfigContent += $currentBlock
+                $Script:dscConfigContent += "        }`r`n"
+            }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Blob Cache Settings]" + $webApp.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3932,81 +4112,89 @@ function Read-SPServiceAppSecurity()
 
     foreach($serviceApp in $serviceApplications)
     {
-        $params.ServiceAppName = $serviceApp.Name
-        $params.SecurityType = "SharingPermissions"
-
-        $fake = New-CimInstance -ClassName Win32_Process -Property @{Handle=0} -Key Handle -ClientOnly
-        $params.Members = $fake
-        $params.Remove("MembersToInclude")
-        $params.Remove("MembersToExclude")
-        $results = Get-TargetResource @params
-
-        $results = Repair-Credentials -results $results 
-        $results.Remove("MembersToInclude")
-        $results.Remove("MembersToExclude")
-
-        if($results.Members.Count -gt 0)
+        try 
         {
-            $stringMember = ""
-            $foundOne = $false
-            foreach($member in $results.Members)
+            $params.ServiceAppName = $serviceApp.Name
+            $params.SecurityType = "SharingPermissions"
+
+            $fake = New-CimInstance -ClassName Win32_Process -Property @{Handle=0} -Key Handle -ClientOnly
+            $params.Members = $fake
+            $params.Remove("MembersToInclude")
+            $params.Remove("MembersToExclude")
+            $results = Get-TargetResource @params
+
+            $results = Repair-Credentials -results $results 
+            $results.Remove("MembersToInclude")
+            $results.Remove("MembersToExclude")
+
+            if($results.Members.Count -gt 0)
             {
-                $stringMember = Get-SPServiceAppSecurityMembers $member
-                if($null -ne $stringMember)
+                $stringMember = ""
+                $foundOne = $false
+                foreach($member in $results.Members)
                 {
-                    if(!$foundOne)
+                    $stringMember = Get-SPServiceAppSecurityMembers $member
+                    if($null -ne $stringMember)
                     {
-                        $Script:dscConfigContent += "        `$members = @();`r`n"
-                        $foundOne = $true
+                        if(!$foundOne)
+                        {
+                            $Script:dscConfigContent += "        `$members = @();`r`n"
+                            $foundOne = $true
+                        }
+                        $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
                     }
-                    $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
+                }
+
+                if($foundOne)
+                {
+                    $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $results.Members = "`$members"
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
                 }
             }
 
-            if($foundOne)
+            $params.SecurityType = "Administrators"
+
+            $results = Get-TargetResource @params
+
+            $results = Repair-Credentials -results $results
+            $results.Remove("MembersToInclude")
+            $results.Remove("MembersToExclude")    
+            $stringMember = ""
+
+            if($results.Members.Count -gt 0)
             {
-                $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $results.Members = "`$members"
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
+                $foundOne = $false
+                foreach($member in $results.Members)
+                {
+                    $stringMember = Get-SPServiceAppSecurityMembers $member
+                    if($null -ne $stringMember)
+                    {
+                        if(!$foundOne)
+                        {
+                            $Script:dscConfigContent += "        `$members = @();`r`n"
+                            $foundOne = $true
+                        }
+                        $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
+                    }
+                }
+
+                if($foundOne)
+                {
+                    $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $results.Members = "`$members"
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n" 
+                }
             }
         }
-
-        $params.SecurityType = "Administrators"
-
-        $results = Get-TargetResource @params
-
-        $results = Repair-Credentials -results $results
-        $results.Remove("MembersToInclude")
-        $results.Remove("MembersToExclude")    
-        $stringMember = ""
-
-        if($results.Members.Count -gt 0)
+        catch
         {
-            $foundOne = $false
-            foreach($member in $results.Members)
-            {
-                $stringMember = Get-SPServiceAppSecurityMembers $member
-                if($null -ne $stringMember)
-                {
-                    if(!$foundOne)
-                    {
-                        $Script:dscConfigContent += "        `$members = @();`r`n"
-                        $foundOne = $true
-                    }
-                    $Script:dscConfigContent += "        `$members += " + $stringMember + ";`r`n"
-                }
-            }
-
-            if($foundOne)
-            {
-                $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $results.Members = "`$members"
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n" 
-            }
+            $Script:ErrorLog += "[Service Application Permissions]" + $serviceApp.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
