@@ -264,9 +264,6 @@ function Orchestrator
                 Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPBlobCacheSettings
 
-                Write-Host "["$spServer.Name"] Scanning Configuration Wizard Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPConfigWizard
-
                 if($Script:ExtractionModeValue -ge 2)
                 {
                     Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -3511,9 +3508,17 @@ function Save-SPFarmsolution($Path)
     $farm = Get-SPFarm
     foreach($solution in $solutions)
     {
-        $file = $farm.Solutions.Item($solution.Name).SolutionFile
-        $filePath = $Path + $solution.Name
-        $file.SaveAs($filePath)
+        try
+        {
+            $file = $farm.Solutions.Item($solution.Name).SolutionFile
+            $filePath = $Path + $solution.Name
+            $file.SaveAs($filePath)
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Saving Farm Solution]" + $solution.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -3608,35 +3613,46 @@ function Read-SPExcelServiceApp()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $excelSSA = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Excel Services Application Web Service Application"}
+    $excelSSAs = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Excel Services Application Web Service Application"}
 
-    if($null -ne $excelSSA)
+    foreach($excelSSA in $excelSSAs)
     {
-        $Script:dscConfigContent += "        SPExcelServiceApp " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.Name = $excelSSA.DisplayName
-        $results = Get-TargetResource @params
-        $privateK = $results.Get_Item("PrivateBytesMax")
-        $unusedMax = $results.Get_Item("UnusedObjectAgeMax")
+        try
+        {
+            if($null -ne $excelSSA)
+            {
+                $Script:dscConfigContent += "        SPExcelServiceApp " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.Name = $excelSSA.DisplayName
+                $results = Get-TargetResource @params
+                $privateK = $results.Get_Item("PrivateBytesMax")
+                $unusedMax = $results.Get_Item("UnusedObjectAgeMax")
 
-        <# Nik20170106 - Temporary fix while waiting to hear back from Brian F. on how to properly pass these params. #>
-        if($results.ContainsKey("TrustedFileLocations"))
-        {
-            $results.Remove("TrustedFileLocations")
-        }
+                <# Nik20170106 - Temporary fix while waiting to hear back from Brian F. on how to properly pass these params. #>
+                if($results.ContainsKey("TrustedFileLocations"))
+                {
+                    $results.Remove("TrustedFileLocations")
+                }
 
-        if($results.ContainsKey("PrivateBytesMax") -and $privateK -eq "-1")
-        {
-            $results.Remove("PrivateBytesMax")
+                if($results.ContainsKey("PrivateBytesMax") -and $privateK -eq "-1")
+                {
+                    $results.Remove("PrivateBytesMax")
+                }
+            
+                if($results.ContainsKey("UnusedObjectAgeMax") -and $unusedMax -eq "-1")
+                {
+                    $results.Remove("UnusedObjectAgeMax")
+                }
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }
         }
-    
-        if($results.ContainsKey("UnusedObjectAgeMax") -and $unusedMax -eq "-1")
+        catch
         {
-            $results.Remove("UnusedObjectAgeMax")
+            $Script:ErrorLog += "[Excel Service Application]" + $excelSSA.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
     }
 }
 
@@ -3674,34 +3690,26 @@ function Read-SPDatabaseAAG()
     $databases = Get-SPDatabase
     foreach($database in $databases)
     {
-        if($null -ne $database.AvailabilityGroup)
+        try
         {
-            $Script:dscConfigContent += "        SPDatabaseAAG " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $params.DatabaseName = $database.Name
-            $params.AGName = $database.AvailabilityGroup            
-            $results = Get-TargetResource @params
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+            if($null -ne $database.AvailabilityGroup)
+            {
+                $Script:dscConfigContent += "        SPDatabaseAAG " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.DatabaseName = $database.Name
+                $params.AGName = $database.AvailabilityGroup            
+                $results = Get-TargetResource @params
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+            }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Database AvailabilityGroup]" + $database.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
-}
-
-function Read-SPConfigWizard()
-{
-    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPConfigWizard\MSFT_SPConfigWizard.psm1")
-    Import-Module $module
-    $params = Get-DSCFakeParameters -ModulePath $module
-
-    $Script:dscConfigContent += "        SPConfigWizard " + [System.Guid]::NewGuid().ToString() + "`r`n"
-    $Script:dscConfigContent += "        {`r`n"
-    $results = Get-TargetResource @params
-
-    $results = Repair-Credentials -results $results
-
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-    $Script:dscConfigContent += "        }`r`n"
 }
 
 function Read-SPWebApplicationAppDomain()
