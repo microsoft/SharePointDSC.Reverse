@@ -2732,7 +2732,15 @@ function Get-SPCrawlSchedule($params)
     $currentSchedule = "MSFT_SPSearchCrawlSchedule{`r`n"
     foreach($key in $params.Keys)
     {
-        $currentSchedule += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+        try
+        {
+            $currentSchedule += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[MSFT_SPSearchCrawlSchedule]" + $key + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
     $currentSchedule += "            }"
     return $currentSchedule
@@ -2770,31 +2778,39 @@ function Get-SPWebPolicyPermissions($params)
     $permission = "MSFT_SPWebPolicyPermissions{`r`n"
     foreach($key in $params.Keys)
     {
-        $isCredentials = $false
-        if($key.ToLower() -eq "username")
+        try
         {
-            if(!($params[$key].ToUpper() -like "NT AUTHORITY*"))
+            $isCredentials = $false
+            if($key.ToLower() -eq "username")
             {
-                $memberUserName = Get-Credentials -UserName $params[$key]
-                if($null -eq $memberUserName)
+                if(!($params[$key].ToUpper() -like "NT AUTHORITY*"))
                 {
-                    Save-Credentials -UserName $params[$key]                
+                    $memberUserName = Get-Credentials -UserName $params[$key]
+                    if($null -eq $memberUserName)
+                    {
+                        Save-Credentials -UserName $params[$key]                
+                    }
+                    $isCredentials = $true
                 }
-                $isCredentials = $true
+            }
+
+            if(($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true") -and !$isCredentials)
+            {
+                $permission += "                " + $key + " = `$" + $params[$key] + "`r`n"
+            }
+            elseif(!$isCredentials)
+            {
+                $permission += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+            }
+            else
+            {
+                $permission += "                " + $key + " =  " + (Resolve-Credentials -UserName $params[$key]) + ".UserName`r`n"
             }
         }
-
-        if(($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true") -and !$isCredentials)
+        catch
         {
-            $permission += "                " + $key + " = `$" + $params[$key] + "`r`n"
-        }
-        elseif(!$isCredentials)
-        {
-            $permission += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
-        }
-        else
-        {
-            $permission += "                " + $key + " =  " + (Resolve-Credentials -UserName $params[$key]) + ".UserName`r`n"
+            $Script:ErrorLog += "[MSFT_SPWebPolicyPermissions]" + $key + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
     $permission += "            }"
@@ -2806,13 +2822,21 @@ function Get-SPClaimTypeMapping($params)
     $ctm = "MSFT_SPClaimTypeMapping{`r`n"
     foreach($key in $params.Keys)
     {
-        if($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true")
+        try 
         {
-            $ctm += "                " + $key + " = `$" + $params[$key] + "`r`n"
+            if($params[$key].ToString().ToLower() -eq "false" -or $params[$key].ToString().ToLower() -eq "true")
+            {
+                $ctm += "                " + $key + " = `$" + $params[$key] + "`r`n"
+            }
+            else
+            {
+                $ctm += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+            }
         }
-        else
+        catch
         {
-            $ctm += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+            $Script:ErrorLog += "[MSFT_SPClaimTypeMapping]" + $key + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
     $ctm += "            }"
@@ -2824,7 +2848,15 @@ function Get-SPWebAppHappyHour($params)
     $happyHour = "MSFT_SPWebApplicationHappyHour{`r`n"
     foreach($key in $params.Keys)
     {
-        $happyHour += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+        try
+        {
+            $happyHour += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[MSFT_SPWebApplicationHappyHour]" + $key + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
     $happyHour += "            }"
     return $happyHour
@@ -2841,23 +2873,31 @@ function Read-SPContentDatabase()
     $total = $spContentDBs.Length
     foreach($spContentDB in $spContentDBs)
     {
-        $dbName = $spContentDB.Name
-        Write-Host "Scanning Content Database [$i/$total] {$dbName}"
-        $Script:dscConfigContent += "        SPContentDatabase " + $spContentDB.Name.Replace(" ", "") + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.Name = $dbName
-        $params.WebAppUrl = $spContentDB.WebApplication.Url
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
+        try
+        {
+            $dbName = $spContentDB.Name
+            Write-Host "Scanning Content Database [$i/$total] {$dbName}"
+            $Script:dscConfigContent += "        SPContentDatabase " + $spContentDB.Name.Replace(" ", "") + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.Name = $dbName
+            $params.WebAppUrl = $spContentDB.WebApplication.Url
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"  
-        $i++
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "        }`r`n"  
+            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Content Database]" + $spContentDB.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -2873,24 +2913,32 @@ function Read-SPAccessServiceApp()
     $total = $serviceApps.Length
     foreach($spAccessService in $serviceApps)
     {
-        $serviceName = $spAccessService.Name
-        Write-Host "Scanning Access Service Application [$i/$total] {$serviceName}"
+        try
+        {
+            $serviceName = $spAccessService.Name
+            Write-Host "Scanning Access Service Application [$i/$total] {$serviceName}"
 
-        $params.Name = $serviceName
-        $params.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-        $results = Get-TargetResource @params
+            $params.Name = $serviceName
+            $params.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
+            $results = Repair-Credentials -results $results
 
-        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-        $Script:dscConfigContent += "        SPAccessServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"  
-        $i++
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+            $Script:dscConfigContent += "        SPAccessServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "        }`r`n"  
+            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Access Service Application]" + $spAccessService.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -2906,45 +2954,31 @@ function Read-SPAccessServices2010()
     $total = $serviceApps.Length
     foreach($spAccessService in $serviceApps)
     {
-        $serviceName = $spAccessService.Name
-        Write-Host "Scanning Access 2010 Service Application [$i/$total] {$serviceName}"
+        try
+        {
+            $serviceName = $spAccessService.Name
+            Write-Host "Scanning Access 2010 Service Application [$i/$total] {$serviceName}"
 
-        $params.Name = $serviceName
-        $results = Get-TargetResource @params
+            $params.Name = $serviceName
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
+            $results = Repair-Credentials -results $results
 
-        $Script:dscConfigContent += "        SPAccessServices2010 " + $spAccessService.Name.Replace(" ", "") + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"  
-        $i++
+            $Script:dscConfigContent += "        SPAccessServices2010 " + $spAccessService.Name.Replace(" ", "") + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += $currentBlock
+            $Script:dscConfigContent += "        }`r`n"  
+            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Access 2010 Service Application]" + $spAccessService.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
-function Read-SPAccessServices2010()
-{
-    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAccessServices2010\MSFT_SPAccessServices2010.psm1")
-    Import-Module $module
-    $params = Get-DSCFakeParameters -ModulePath $module
-    $serviceApps = Get-SPServiceApplication
-    $serviceApps = $serviceApps | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Access.Server.MossHost.AccessServerWebServiceApplication"}
-
-    foreach($spAccessService in $serviceApps)
-    {
-        $params.Name = $spAccessService.Name
-        $results = Get-TargetResource @params
-
-        $results = Repair-Credentials -results $results
-
-        $Script:dscConfigContent += "        SPAccessServices2010 " + $spAccessService.Name.Replace(" ", "") + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += $currentBlock
-        $Script:dscConfigContent += "        }`r`n"  
-    }
-}
 function Read-SPAppCatalog()
 {
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppCatalog\MSFT_SPAppCatalog.psm1")
@@ -2954,28 +2988,36 @@ function Read-SPAppCatalog()
 
     foreach($webApp in $webApps)
     {
-        $feature = $webApp.Features.Item([Guid]::Parse("f8bea737-255e-4758-ab82-e34bb46f5828"))
-        if($null -ne $feature)
+        try
         {
-            $appCatalogSiteId = $feature.Properties["__AppCatSiteId"].Value
-            $appCatalogSite = $webApp.Sites | Where-Object{$_.ID -eq $appCatalogSiteId}
-
-            if($null -ne $appCatalogSite)
+            $feature = $webApp.Features.Item([Guid]::Parse("f8bea737-255e-4758-ab82-e34bb46f5828"))
+            if($null -ne $feature)
             {
-                $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppCatalog\MSFT_SPAppCatalog.psm1")
-                Import-Module $module
-                $params = Get-DSCFakeParameters -ModulePath $module
+                $appCatalogSiteId = $feature.Properties["__AppCatSiteId"].Value
+                $appCatalogSite = $webApp.Sites | Where-Object{$_.ID -eq $appCatalogSiteId}
 
-                $catUrl = $appCatalogSite.Url
-                Write-Host "Scanning App Catalog {$catUrl}"
-                $Script:dscConfigContent += "        SPAppCatalog " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $params.SiteUrl = $catUrl
-                $results = Get-TargetResource @params
-                $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
+                if($null -ne $appCatalogSite)
+                {
+                    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppCatalog\MSFT_SPAppCatalog.psm1")
+                    Import-Module $module
+                    $params = Get-DSCFakeParameters -ModulePath $module
+
+                    $catUrl = $appCatalogSite.Url
+                    Write-Host "Scanning App Catalog {$catUrl}"
+                    $Script:dscConfigContent += "        SPAppCatalog " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.SiteUrl = $catUrl
+                    $results = Get-TargetResource @params
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                }
             }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[App Catalog]" + $webApp.Url + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3010,35 +3052,43 @@ function Read-SPSearchFileType()
 
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try
         {
-            $serviceName = $ssa.DisplayName
-            Write-Host "Scanning Search File Type for Search Application [$i/$total] {$serviceName}"
-            $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
-
-            $j = 1
-            $totalFT = $fileFormats.Length
-            foreach($fileFormat in $fileFormats)
+            if($null -ne $ssa)
             {
-                $fileType = $fileFormat.Identity
-                Write-Host "    -> Scanning File Type [$j/$totalFT] {$fileType}"
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Search File Type for Search Application [$i/$total] {$serviceName}"
+                $fileFormats = Get-SPEnterpriseSearchFileFormat -SearchApplication $ssa
 
-                $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $params.ServiceAppName = $serviceName
-                $params.FileType = $fileType
+                $j = 1
+                $totalFT = $fileFormats.Length
+                foreach($fileFormat in $fileFormats)
+                {
+                    $fileType = $fileFormat.Identity
+                    Write-Host "    -> Scanning File Type [$j/$totalFT] {$fileType}"
 
-                $results = Get-TargetResource @params
+                    $Script:dscConfigContent += "        SPSearchFileType " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.ServiceAppName = $serviceName
+                    $params.FileType = $fileType
 
-                $results = Repair-Credentials -results $results
+                    $results = Get-TargetResource @params
 
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
+                    $results = Repair-Credentials -results $results
 
-                $j++
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+
+                    $j++
+                }
             }
+            $i++
         }
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[Search File Type]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -3054,47 +3104,63 @@ function Read-SPSearchIndexPartition()
     $total = $ssas.Length
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try
         {
-            $serviceName =$ssa.DisplayName
-            Write-Host "Scanning Index Partitions for Search Service Application [$i/$total] {$serviceName}"
-
-            $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
-            $currentTopology = $ssa.ActiveTopology
-            $indexComponents = Get-SPEnterpriseSearchComponent -SearchTopology $currentTopology | `
-                Where-Object -FilterScript {$_.GetType().Name -eq "IndexComponent"}
-
-            [System.Collections.ArrayList]$indexesAlreadyScanned = @()
-            $j = 1
-            $totalIndex = $indexComponents.Length
-            foreach($indexComponent in $indexComponents)
+            if($null -ne $ssa)
             {
-                if(!$indexesAlreadyScanned.Contains($indexComponent.IndexPartitionOrdinal))
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Index Partitions for Search Service Application [$i/$total] {$serviceName}"
+
+                $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
+                $currentTopology = $ssa.ActiveTopology
+                $indexComponents = Get-SPEnterpriseSearchComponent -SearchTopology $currentTopology | `
+                    Where-Object -FilterScript {$_.GetType().Name -eq "IndexComponent"}
+
+                [System.Collections.ArrayList]$indexesAlreadyScanned = @()
+                $j = 1
+                $totalIndex = $indexComponents.Length
+                foreach($indexComponent in $indexComponents)
                 {
-                    $icServerName = $indexComponent.ServerName
-                    Write-Host "    -> Index Component [$j/$totalIndex] {$icServerName}"
+                    try
+                    {
+                        if(!$indexesAlreadyScanned.Contains($indexComponent.IndexPartitionOrdinal))
+                        {
+                            $icServerName = $indexComponent.ServerName
+                            Write-Host "    -> Index Component [$j/$totalIndex] {$icServerName}"
 
-                    $indexesAlreadyScanned += $indexComponent.IndexPartitionOrdinal
-                    $Script:dscConfigContent += "        SPSearchIndexPartition " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $params.ServiceAppName = $serviceName
-                    $params.Index = $indexComponent.IndexPartitionOrdinal
-                    $params.Servers = $indexComponent.ServerName
-                    $params.RootDirectory = $indexComponent.RootDirectory
-                    $results = Get-TargetResource @params
+                            $indexesAlreadyScanned += $indexComponent.IndexPartitionOrdinal
+                            $Script:dscConfigContent += "        SPSearchIndexPartition " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                            $Script:dscConfigContent += "        {`r`n"
+                            $params.ServiceAppName = $serviceName
+                            $params.Index = $indexComponent.IndexPartitionOrdinal
+                            $params.Servers = $indexComponent.ServerName
+                            $params.RootDirectory = $indexComponent.RootDirectory
+                            $results = Get-TargetResource @params
 
-                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.Servers -Description "List of Servers that will host the Search Index Partitions;"
-                    $results.Servers = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
+                            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.Servers -Description "List of Servers that will host the Search Index Partitions;"
+                            $results.Servers = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
 
-                    $results = Repair-Credentials -results $results
+                            $results = Repair-Credentials -results $results
 
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                    $Script:dscConfigContent += "        }`r`n"
-                    $j++
+                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $Script:dscConfigContent += "        }`r`n"
+                            $j++
+                        }
+                    }
+                    catch
+                    {
+                        $Script:ErrorLog += "[Index Component]" + $indexComponent.ServerName + "`r`n"
+                        $Script:ErrorLog += "$_`r`n`r`n"
+                    }
                 }
             }
+            $i++
         }
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[Search Index Partition]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -3110,43 +3176,51 @@ function Read-SPSearchTopology()
     $total = $ssas.Length
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try 
         {
-            $serviceName = $ssa.DisplayName
-            Write-Host "Scanning Search Topology for Service Application [$i/$total] {$serviceName}"
-            $Script:dscConfigContent += "        SPSearchTopology " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $params.ServiceAppName = $serviceName
-            $results = Get-TargetResource @params
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchContentProcessingServers" -Value $results.ContentProcessing -Description "List of servers that will act as Search Content Processors;"
-            $results.ContentProcessing = "`$ConfigurationData.NonNodeData.SearchContentProcessingServers"
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAnalyticsProcessingServers" -Value $results.AnalyticsProcessing -Description "List of servers that will act as Search Analytics Processors;"
-            $results.AnalyticsProcessing = "`$ConfigurationData.NonNodeData.SearchAnalyticsProcessingServers"
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.IndexPartition -Description "List of servers that will host the Search Index Partitions;"
-            $results.IndexPartition = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchCrawlerServers" -Value $results.Crawler -Description "List of servers that will act as Search Crawlers;"
-            $results.Crawler = "`$ConfigurationData.NonNodeData.SearchCrawlerServers"
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAdminServers" -Value $results.Admin -Description "List of servers that will host the Search Admin Components;"
-            $results.Admin = "`$ConfigurationData.NonNodeData.SearchAdminServers"
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "QueryProcessingServers" -Value $results.QueryProcessing -Description "List of servers that will host the Search Query Components;"
-            $results.QueryProcessing = "`$ConfigurationData.NonNodeData.QueryProcessingServers"
-
-            if($results.FirstPartitionDirectory.Length -gt 1)
+            if($null -ne $ssa)
             {
-                $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Search Topology for Service Application [$i/$total] {$serviceName}"
+                $Script:dscConfigContent += "        SPSearchTopology " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $params.ServiceAppName = $serviceName
+                $results = Get-TargetResource @params
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchContentProcessingServers" -Value $results.ContentProcessing -Description "List of servers that will act as Search Content Processors;"
+                $results.ContentProcessing = "`$ConfigurationData.NonNodeData.SearchContentProcessingServers"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAnalyticsProcessingServers" -Value $results.AnalyticsProcessing -Description "List of servers that will act as Search Analytics Processors;"
+                $results.AnalyticsProcessing = "`$ConfigurationData.NonNodeData.SearchAnalyticsProcessingServers"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.IndexPartition -Description "List of servers that will host the Search Index Partitions;"
+                $results.IndexPartition = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchCrawlerServers" -Value $results.Crawler -Description "List of servers that will act as Search Crawlers;"
+                $results.Crawler = "`$ConfigurationData.NonNodeData.SearchCrawlerServers"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchAdminServers" -Value $results.Admin -Description "List of servers that will host the Search Admin Components;"
+                $results.Admin = "`$ConfigurationData.NonNodeData.SearchAdminServers"
+
+                Add-ConfigurationDataEntry -Node "NonNodeData" -Key "QueryProcessingServers" -Value $results.QueryProcessing -Description "List of servers that will host the Search Query Components;"
+                $results.QueryProcessing = "`$ConfigurationData.NonNodeData.QueryProcessingServers"
+
+                if($results.FirstPartitionDirectory.Length -gt 1)
+                {
+                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+                }
+
+                $results = Repair-Credentials -results $results
+
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
+                $i++
             }
-
-            $results = Repair-Credentials -results $results
-
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
-            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Search Topology]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3163,49 +3237,57 @@ function Read-SPSearchResultSource()
     $total = $ssas.Length
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try
         {
-            $serviceName = $ssa.DisplayName
-            Write-Host "Scanning Results Sources for Search Service Application [$i/$total] {$serviceName}"
-            $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
-            $searchSiteUrl = $ssa.SearchCenterUrl -replace "/pages"
-            $searchSite = Get-SPWeb -Identity $searchSiteUrl -ErrorAction SilentlyContinue
-
-            if(!$null -eq $searchSite)
+            if($null -ne $ssa)
             {
-                $adminNamespace = "Microsoft.Office.Server.Search.Administration"
-                $objectLevel = [Microsoft.Office.Server.Search.Administration.SearchObjectLevel]
-                $searchOwner = New-Object -TypeName "$adminNamespace.SearchObjectOwner" `
-                                        -ArgumentList @(
-                                            $objectLevel::Ssa, 
-                                            $searchSite
-                                        )
-                $resultSources = Get-SPEnterpriseSearchResultSource -SearchApplication $ssa -Owner $searchOwner
-                $j = 1
-                $totalRS = $resultSources.Length
-                foreach($resultSource in $resultSources)
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Results Sources for Search Service Application [$i/$total] {$serviceName}"
+                $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
+                $searchSiteUrl = $ssa.SearchCenterUrl -replace "/pages"
+                $searchSite = Get-SPWeb -Identity $searchSiteUrl -ErrorAction SilentlyContinue
+
+                if(!$null -eq $searchSite)
                 {
-                    <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
-                    if($resultSource.Name -ne "Local SharePoint Graph")
+                    $adminNamespace = "Microsoft.Office.Server.Search.Administration"
+                    $objectLevel = [Microsoft.Office.Server.Search.Administration.SearchObjectLevel]
+                    $searchOwner = New-Object -TypeName "$adminNamespace.SearchObjectOwner" `
+                                            -ArgumentList @(
+                                                $objectLevel::Ssa, 
+                                                $searchSite
+                                            )
+                    $resultSources = Get-SPEnterpriseSearchResultSource -SearchApplication $ssa -Owner $searchOwner
+                    $j = 1
+                    $totalRS = $resultSources.Length
+                    foreach($resultSource in $resultSources)
                     {
-                        $rsName = $resultSource.Name
-                        Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
-                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                        $Script:dscConfigContent += "        {`r`n"
-                        $params.SearchServiceAppName = $serviceName 
-                        $params.Name = $rsName
-                        $results = Get-TargetResource @params
-                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                        <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
+                        if($resultSource.Name -ne "Local SharePoint Graph")
                         {
-                            $results.Remove("ConnectionUrl")
+                            $rsName = $resultSource.Name
+                            Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
+                            $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                            $Script:dscConfigContent += "        {`r`n"
+                            $params.SearchServiceAppName = $serviceName 
+                            $params.Name = $rsName
+                            $results = Get-TargetResource @params
+                            if($null -eq $results.Get_Item("ConnectionUrl"))
+                            {
+                                $results.Remove("ConnectionUrl")
+                            }
+                            $results = Repair-Credentials -results $results
+                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $Script:dscConfigContent += "        }`r`n"
                         }
-                        $results = Repair-Credentials -results $results
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                        $Script:dscConfigContent += "        }`r`n"
+                        $j++
                     }
-                    $j++
                 }
             }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Search Result Source]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3221,61 +3303,40 @@ function Read-SPSearchCrawlRule()
     $total = $ssas.Length
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try
         {
-            $serviceName = $ssa.DisplayName
-            Write-Host "Scanning Cral Rules for Search Service Application [$i/$total] {$serviceName}"
-
-            $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
-
-            $j = 1
-            $totalCR = $crawlRules.Length
-            foreach($crawlRule in $crawlRules)
+            if($null -ne $ssa)
             {
-                $crPath = $crawlRule.Path
-                Write-Host "    -> Scanning Crawl Rule [$j/$totalCR] {$crPath}"
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Cral Rules for Search Service Application [$i/$total] {$serviceName}"
 
-                $Script:dscConfigContent += "        SPSearchCrawlRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $params.ServiceAppName = $serviceName
-                $params.Path = $crPath
-                $params.Remove("CertificateName")
-                $results = Get-TargetResource @params
-                $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
-                $j++
+                $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
+
+                $j = 1
+                $totalCR = $crawlRules.Length
+                foreach($crawlRule in $crawlRules)
+                {
+                    $crPath = $crawlRule.Path
+                    Write-Host "    -> Scanning Crawl Rule [$j/$totalCR] {$crPath}"
+
+                    $Script:dscConfigContent += "        SPSearchCrawlRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.ServiceAppName = $serviceName
+                    $params.Path = $crPath
+                    $params.Remove("CertificateName")
+                    $results = Get-TargetResource @params
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                    $j++
+                }
             }
+            $i++
         }
-        $i++
-    }
-}
-
-function Read-SPSearchCrawlRule()
-{
-    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchCrawlRule\MSFT_SPSearchCrawlRule.psm1")
-    Import-Module $module
-    $params = Get-DSCFakeParameters -ModulePath $module
-
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
-    foreach($ssa in $ssas)
-    {
-        if($null -ne $ssa)
+        catch
         {
-            $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
-
-            foreach($crawlRule in $crawlRules)
-            {
-                $Script:dscConfigContent += "        SPSearchCrawlRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $params.ServiceAppName = $ssa.DisplayName
-                $params.Path = $crawlRule.Path
-                $params.Remove("CertificateName")
-                $results = Get-TargetResource @params
-                $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
-            }
+            $Script:ErrorLog += "[Search Crawl Rule]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3289,22 +3350,30 @@ function Read-SPSearchCrawlerImpactRule()
     $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
     foreach($ssa in $ssas)
     {
-        if($null -ne $ssa)
+        try
         {
-            $impactRules = Get-SPEnterpriseSearchSiteHitRule -SearchService $ssa
-  
-            foreach($crawlRule in $impactRules)
+            if($null -ne $ssa)
             {
-                $Script:dscConfigContent += "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $params.ServiceAppName = $ssa.DisplayName
-                $params.Path = $crawlRule.Path
-                $params.Remove("CertificateName")
-                $results = Get-TargetResource @params
-                $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                $Script:dscConfigContent += "        }`r`n"
+                $impactRules = Get-SPEnterpriseSearchSiteHitRule -SearchService $ssa
+    
+                foreach($crawlRule in $impactRules)
+                {
+                    $Script:dscConfigContent += "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.ServiceAppName = $ssa.DisplayName
+                    $params.Path = $crawlRule.Path
+                    $params.Remove("CertificateName")
+                    $results = Get-TargetResource @params
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                }
             }
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Search Crawler Impact Rule]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3313,18 +3382,26 @@ function Read-SPOfficeOnlineServerBinding()
 {
     $WOPIZone = Get-SPWOPIZone
     $bindings = Get-SPWOPIBinding  -WOPIZone $WOPIZone
-    if($null -ne $bindings)
+    try
     {
-        $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPOfficeOnlineServerBinding\MSFT_SPOfficeOnlineServerBinding.psm1")
-        Import-Module $module
-        $params = Get-DSCFakeParameters -ModulePath $module
+        if($null -ne $bindings)
+        {
+            $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPOfficeOnlineServerBinding\MSFT_SPOfficeOnlineServerBinding.psm1")
+            Import-Module $module
+            $params = Get-DSCFakeParameters -ModulePath $module
 
-        $Script:dscConfigContent += "        SPOfficeOnlineServerBinding " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
+            $Script:dscConfigContent += "        SPOfficeOnlineServerBinding " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+    }
+    catch
+    {
+        $Script:ErrorLog += "[Office Online Server Binding]`r`n"
+        $Script:ErrorLog += "$_`r`n`r`n"
     }
 }
 
@@ -3356,27 +3433,35 @@ function Read-SPHealthAnalyzerRuleState()
 
     foreach($healthRule in $healthRulesList.Items)
     {
-        $params.Name = $healthRule.Title
-        $results = Get-TargetResource @params
-
-        if($null -ne $results.Schedule)
+        try
         {
-            $Script:dscConfigContent += "        SPHealthAnalyzerRuleState " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"      
+            $params.Name = $healthRule.Title
+            $results = Get-TargetResource @params
 
-            if($results.Get_Item("Schedule") -eq "On Demand")
+            if($null -ne $results.Schedule)
             {
-                $results.Schedule = "OnDemandOnly"
+                $Script:dscConfigContent += "        SPHealthAnalyzerRuleState " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"      
+
+                if($results.Get_Item("Schedule") -eq "On Demand")
+                {
+                    $results.Schedule = "OnDemandOnly"
+                }
+            
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $Script:dscConfigContent += "        }`r`n"
             }
-        
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+            else
+            {
+                $ruleName = $healthRule.Title
+                Write-Warning "Could not extract information for rule {$ruleName}. There may be some missing service applications."
+            }
         }
-        else
+        catch
         {
-            $ruleName = $healthRule.Title
-            Write-Warning "Could not extract information for rule {$ruleName}. There may be some missing service applications."
+            $Script:ErrorLog += "[Health Analyzer Rule]" + $healthRule.Title + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
 }
@@ -3390,24 +3475,32 @@ function Read-SPFarmSolution()
 
     foreach($solution in $solutions)
     {
-        $Script:dscConfigContent += "        SPFarmSolution " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.Name = $solution.Name
-        $results = Get-TargetResource @params
-        if($results.ContainsKey("ContainsGlobalAssembly"))
+        try
         {
-            $results.Remove("ContainsGlobalAssembly")
+            $Script:dscConfigContent += "        SPFarmSolution " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.Name = $solution.Name
+            $results = Get-TargetResource @params
+            if($results.ContainsKey("ContainsGlobalAssembly"))
+            {
+                $results.Remove("ContainsGlobalAssembly")
+            }
+            $filePath = "`$AllNodes.Where{`$Null -ne `$_.SPSolutionPath}.SPSolutionPath+###" + $solution.Name + "###"
+            $results["LiteralPath"] = $filePath
+            $results = Repair-Credentials -results $results
+
+            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentblock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LiteralPath"
+            $currentBlock = $currentBlock.Replace("###", "`"")
+            $Script:dscConfigContent += $currentBlock
+
+            $Script:dscConfigContent += "        }`r`n"
         }
-        $filePath = "`$AllNodes.Where{`$Null -ne `$_.SPSolutionPath}.SPSolutionPath+###" + $solution.Name + "###"
-        $results["LiteralPath"] = $filePath
-        $results = Repair-Credentials -results $results
-
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentblock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LiteralPath"
-        $currentBlock = $currentBlock.Replace("###", "`"")
-        $Script:dscConfigContent += $currentBlock
-
-        $Script:dscConfigContent += "        }`r`n"
+        catch
+        {
+            $Script:ErrorLog += "[Farm Solution]" + $solution.Name + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
@@ -4415,6 +4508,12 @@ function Get-SPReverseDSC()
             "Import-AzureRmAutomationDscConfiguration -SourcePath (Get-Item '.\" + ($Script:configName + ".ps1") + "').FullName -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -Verbose -Published -Force`r`n"  + `
             "Start-AzureRmAutomationDscCompilationJob -ResourceGroupName `"" + $resGroupName + "`" -AutomationAccountName `"" + $automationAccountName + "`" -ConfigurationName `"" + $Script:configName + "`" -ConfigurationData `$configData"
         $deployScriptContent | Out-File $azureDeployScriptPath
+    }
+
+    if($Script:ErrorLog)
+    {
+        $errorLogPath = $OutputDSCPath + "SharePointDSC.Reverse-Errors.log"
+        $Script:ErrorLog | Out-File $errorLogPath
     }
 
     <## Wait a second, then open our $outputDSCPath in Windows Explorer so we can review the glorious output. ##>
