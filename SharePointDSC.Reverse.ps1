@@ -1649,7 +1649,7 @@ function Read-SPUsageServiceApplication()
             Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "UsageAppFailOverDatabaseServer" -Value $results.FailOverDatabaseServer -Description "Name of the Usage Service Application Failover Database;"
             $results.FailOverDatabaseServer = "`$ConfigurationData.NonNodeData.UsageAppFailOverDatabaseServer"
         }
-        $results.DatabaseName = "`$ConfigurationData.NonNodeData.DatabaseServer"
+        $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageLogLocation" -Value $results.UsageLogLocation -Description "Path where the Usage Logs will be stored;"
         $results.UsageLogLocation = "`$ConfigurationData.NonNodeData.UsageLogLocation"
 
@@ -2945,6 +2945,9 @@ function Read-SPSearchIndexPartition()
                     $params.Servers = $indexComponent.ServerName
                     $params.RootDirectory = $indexComponent.RootDirectory
                     $results = Get-TargetResource @params
+
+                    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SearchIndexPartitionServers" -Value $results.Servers -Description "List of Servers that will host the Search Index Partitions;"
+                    $results.Servers = "`$ConfigurationData.NonNodeData.SearchIndexPartitionServers"
 
                     $results = Repair-Credentials -results $results
 
