@@ -1653,6 +1653,7 @@ function Read-SPUsageServiceApplication()
 
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "UsageLogLocation"
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
 
         if($failOverFound)
         {
@@ -1688,20 +1689,31 @@ function Read-StateServiceApplication ($modulePath, $params)
     $total = $stateApplications.Length
     foreach($stateApp in $stateApplications)
     {
-        if($stateApp -ne $null)
+        try
         {
-            $serviceName = $stateApp.DisplayName
-            Write-Host "Scanning State Service Application [$i/$total] {$serviceName}"
+            if($stateApp -ne $null)
+            {
+                $serviceName = $stateApp.DisplayName
+                Write-Host "Scanning State Service Application [$i/$total] {$serviceName}"
 
-            $params.Name = $serviceName
-            $Script:dscConfigContent += "        SPStateServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
-            $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+                $params.Name = $serviceName
+                $Script:dscConfigContent += "        SPStateServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
+                $Script:dscConfigContent += "        {`r`n"
+                $results = Get-TargetResource @params
+                $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
+
+                $results = Repair-Credentials -results $results
+                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += "        }`r`n"
+            }
+            $i++
         }
-        $i++
+        catch
+        {
+            $Script:ErrorLog += "[State service Application]" + $stateApp.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
     }
 }
 
