@@ -20,6 +20,10 @@
 * Fixed issue with null languages for SPManagedMetadataService;
 * Added additional verbose info during the SPTimerJob State extraction;
 * Changed the default Configuration name due to reported issue with '-' and '.';
+* Fixed all spacing alignment;
+* Removed support for PowerShell 4.0 when replicating (Extraction still works with PS 4.0);
+* Major refactoring of error handling across the board;
+* Additional progress verbose;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.6"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
@@ -450,14 +454,7 @@ function Orchestrator
                 $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
                 $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
 
-                if($PSVersionTable.PSVersion.Major -ge 5)
-                {
-                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-                }
-                else
-                {
-                    $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-                }
+                $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
 
                 $Script:dscConfigContent += "            }`r`n"
                 $Script:dscConfigContent += "        }`r`n"
@@ -702,14 +699,7 @@ function Read-SPInstall
     $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
 
-    if($PSVersionTable.PSVersion.Major -eq 4)
-    {
-        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-    }
-    else
-    {
-        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-    }
+    $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
     $Script:dscConfigContent += "            }`r`n"
     $Script:dscConfigContent += "        }`r`n"
 }
@@ -725,14 +715,8 @@ function Read-SPInstallPrereqs
     $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
 
-    if($PSVersionTable.PSVersion.Major -eq 4)
-    {
-        $Script:dscConfigContent += "                InstallAccount = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-    }
-    else
-    {
-        $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
-    }
+    $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
+
     $Script:dscConfigContent += "            }`r`n"
     $Script:dscConfigContent += "        }`r`n"
 }
@@ -1041,10 +1025,8 @@ function Repair-Credentials($results)
             $results.Remove("PsDscRunAsCredential")        
         }
 
-        if($PSVersionTable.PSVersion.Major -ge 5)
-        {
-            $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
-        }
+        $results.Add("PsDscRunAsCredential", "`$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ",""))
+
         return $results
     }
     return $null
