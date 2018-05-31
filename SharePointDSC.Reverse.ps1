@@ -24,6 +24,7 @@
 * Removed support for PowerShell 4.0 when replicating (Extraction still works with PS 4.0);
 * Major refactoring of error handling across the board;
 * Additional progress verbose;
+* Fixes for extraction of the Connection type from SPUserProfileSyncConnection;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.6"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
@@ -221,7 +222,7 @@ function Orchestrator
                 Read-StateServiceApplication
 
                 Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-UserProfileServiceApplication
+                Read-SPUserProfileServiceApplication
 
                 Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPMachineTranslationServiceApp
@@ -313,9 +314,6 @@ function Orchestrator
                     Read-SPSearchFileType
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchIndexPartition
-
                 if($Script:ExtractionModeValue -ge 2)
                 {
                     Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -324,6 +322,9 @@ function Orchestrator
 
                 Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPSearchTopology
+
+                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSearchIndexPartition
 
                 Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPWordAutomationServiceApplication
@@ -1864,7 +1865,7 @@ function Read-CacheAccounts ($modulePath, $params)
 }
 
 <## This function retrieves settings related to the User Profile Service Application. #>
-function Read-UserProfileServiceApplication ($modulePath, $params)
+function Read-SPUserProfileServiceApplication ($modulePath, $params)
 {
     if($modulePath -ne $null)
     {
@@ -3992,7 +3993,11 @@ function Read-SPUserProfileSyncConnection()
                     $results = Get-TargetResource @params
                     if($null -ne $results)
                     {
-                        $Script:dscConfigContent += "        SPUserProfileSyncConnection  " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                        if($results.ConnectionType -eq "ActiveDirectoryImport")
+                        {
+                            $results.ConnectionType = "ActiveDirectory"
+                        }
+                        $Script:dscConfigContent += "        SPUserProfileSyncConnection " + [System.Guid]::NewGuid().ToString() + "`r`n"
                         $Script:dscConfigContent += "        {`r`n"
                         $results = Repair-Credentials -results $results
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
