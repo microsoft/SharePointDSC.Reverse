@@ -25,9 +25,10 @@
 * Major refactoring of error handling across the board;
 * Additional progress verbose;
 * Fixes for extraction of the Connection type from SPUserProfileSyncConnection;
+* Fixes for Array Config Data issues;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.6"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.7"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
 
 <# 
 
@@ -1180,27 +1181,27 @@ function Read-SPSitesAndWebs ()
                         $results.Remove("QuotaTemplate")
                     }
                 }
-                if($null -eq $results.Get_Item("SecondaryOwnerAlias"))
+                if(!$results.Get_Item("SecondaryOwnerAlias"))
                 {
                     $results.Remove("SecondaryOwnerAlias")
                 }
-                if($null -eq $results.Get_Item("SecondaryEmail"))
+                if(!$results.Get_Item("SecondaryEmail"))
                 {
                     $results.Remove("SecondaryEmail")
                 }
-                if($null -eq $results.Get_Item("OwnerEmail") -or "" -eq $results.Get_Item("OwnerEmail"))
+                if(!$results.Get_Item("OwnerEmail"))
                 {
                     $results.Remove("OwnerEmail")
                 }
-                if($null -eq $results.Get_Item("HostHeaderWebApplication"))
+                if(!$results.Get_Item("HostHeaderWebApplication"))
                 {
                     $results.Remove("HostHeaderWebApplication")
                 }
-                if($null -eq $results.Get_Item("Name") -or "" -eq $results.Get_Item("Name"))
+                if(!$results.Get_Item("Name"))
                 {
                     $results.Remove("Name")
                 }
-                if($null -eq $results.Get_Item("Description") -or "" -eq $results.Get_Item("Description"))
+                if(!$results.Get_Item("Description"))
                 {
                     $results.Remove("Description")
                 }
@@ -1914,8 +1915,8 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
                     Write-Host "Scanning User Profile Service Application [$i/$total] {$serviceName}"
 
                     $params.Name = $serviceName
-                    $Script:dscConfigContent += "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
+                    $currentBlock = "        SPUserProfileServiceApp " + [System.Guid]::NewGuid().toString() + "`r`n"
+                    $currentBlock += "        {`r`n"
 
                     if($null -eq $params.InstallAccount)
                     {
@@ -1943,7 +1944,7 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
                     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
                     $results.SocialDBServer = "`$ConfigurationData.NonNodeData.SocialDBServer"
 
-                    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SocialDBServer"
