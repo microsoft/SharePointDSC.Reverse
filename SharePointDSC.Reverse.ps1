@@ -28,7 +28,7 @@
 * Fixes for Array Config Data issues;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.7"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.8"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
 
 <# 
 
