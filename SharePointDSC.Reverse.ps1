@@ -1487,7 +1487,7 @@ function Read-SPManagedAccounts()
             Write-Host "Scanning SPManagedAccount [$i/$total] {$mAccountName}"
 
             $Script:dscConfigContent += "        SPManagedAccount " + [System.Guid]::NewGuid().toString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"        
+            $Script:dscConfigContent += "        {`r`n"
             <# WA - 1.6.0.0 has a bug where the Get-TargetResource returns an array of all ManagedAccount (see Issue #533) #>
             $schedule = $null
             if($null -ne $managedAccount.ChangeSchedule)
