@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.3.0.0
+.VERSION 2.4.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,19 +16,11 @@
 
 .RELEASENOTES
 
-* Aligned with SharePointDSC 2.3.0.0;
-* Fixed issue with null languages for SPManagedMetadataService;
-* Added additional verbose info during the SPTimerJob State extraction;
-* Changed the default Configuration name due to reported issue with '-' and '.';
-* Fixed all spacing alignment;
-* Removed support for PowerShell 4.0 when replicating (Extraction still works with PS 4.0);
-* Major refactoring of error handling across the board;
-* Additional progress verbose;
-* Fixes for extraction of the Connection type from SPUserProfileSyncConnection;
-* Fixes for Array Config Data issues;
+* Fix verbose for MAnaged Path Extraction;
+* 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.8"},@{ModuleName="SharePointDSC";ModuleVersion="2.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.8"},@{ModuleName="SharePointDSC";ModuleVersion="2.4.0.0"}
 
 <# 
 
@@ -1405,7 +1397,7 @@ function Read-SPManagedPaths
         {
             try
             {
-                Write-Host "Scanning Web Application Managed Path [$i/$total] {$spManagedPath.Name}"
+                Write-Host "Scanning Web Application Managed Path [$i/$total] {"$spManagedPath.Name"}"
                 if($spManagedPath.Name.Length -gt 0 -and $spManagedPath.Name -ne "sites")
                 {
                     $Script:dscConfigContent += "        SPManagedPath " + [System.Guid]::NewGuid().toString() + "`r`n"
@@ -1443,7 +1435,7 @@ function Read-SPManagedPaths
     {
         try
         {
-            Write-Host "Scanning Host Header Managed Path [$i/$total] {$spManagedPath.Name}"
+            Write-Host "Scanning Host Header Managed Path [$i/$total] {"$spManagedPath.Name"}"
             if($spManagedPath.Name.Length -gt 0 -and $spManagedPath.Name -ne "sites")
             {
                 $Script:dscConfigContent += "        SPManagedPath " + [System.Guid]::NewGuid().toString() + "`r`n"
