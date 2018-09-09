@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.4.0.0
+.VERSION 2.5.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,8 +16,7 @@
 
 .RELEASENOTES
 
-* Fix verbose for MAnaged Path Extraction;
-* 
+* Updated Requirement for SharePointDSC 2.5.0.0;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
