@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.0.0
+.VERSION 2.5.0.1
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -17,6 +17,8 @@
 .RELEASENOTES
 
 * Updated Requirement for SharePointDSC 2.5.0.0;
+* Fixes issue with Central Admin Invalid Port;
+* Now filters out invalid usernames (e.g. true) from Web App Policies;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -745,7 +747,7 @@ function Read-SPFarm (){
         $caAuthMethod = "Kerberos"
     }
     $params.CentralAdministrationAuth = $caAuthMethod
-
+    $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].ServerBindings.Port
     $params.FarmAccount = $Global:spFarmAccount
     $params.Passphrase = $Global:spFarmAccount
     $results = Get-TargetResource @params
@@ -1693,8 +1695,11 @@ function Read-SPWebAppPolicy()
         {
             foreach($member in $results.Members)
             {
-                $resultPermission = Get-SPWebPolicyPermissions -params $member
-                $results.Members = $resultPermission
+                if($member.UserName.Contains("\"))
+                {
+                    $resultPermission = Get-SPWebPolicyPermissions -params $member
+                    $results.Members += $resultPermission
+                }
             }
         }
 
