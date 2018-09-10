@@ -24,6 +24,7 @@
 * Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
 * Fixed issue with Other languages than english when extracting configuration database;
 * Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
+* Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -1212,8 +1213,14 @@ function Read-SPSitesAndWebs ()
                 $results = Repair-Credentials -results $results
 
                 $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+                $plainTextUser = $false;
+                if(!$ownerAlias)
+                {
+                    $plainTextUser = $true
+                    $ownerAlias = $results.OwnerAlias
+                }
                 $currentBlock = ""
-                if($null -ne $ownerAlias)
+                if($null -ne $ownerAlias -and !$plainTextUser)
                 {
                     $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
                 }
@@ -1227,7 +1234,7 @@ function Read-SPSitesAndWebs ()
                     }
                     else
                     {
-                        Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
+                        $secondaryOwner = $results.SecondaryOwnerAlias
                     }
                 }
                 $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
