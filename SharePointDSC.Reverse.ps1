@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.0.3
+.VERSION 2.5.0.4
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -25,6 +25,7 @@
 * Fixed issue with Other languages than english when extracting configuration database;
 * Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
 * Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
+* Removed the invalid Ensure parameter from being extracted from SPUserProfileSyncConnection;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -4036,6 +4037,10 @@ function Read-SPUserProfileSyncConnection()
                         $Script:dscConfigContent += "        SPUserProfileSyncConnection " + [System.Guid]::NewGuid().ToString() + "`r`n"
                         $Script:dscConfigContent += "        {`r`n"
                         $results = Repair-Credentials -results $results
+                        if($results.Contains("Ensure"))
+                        {
+                            $results.Remove("Ensure")
+                        }
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                         $Script:dscConfigContent += "        }`r`n"
                     }
