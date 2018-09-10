@@ -21,6 +21,7 @@
 * Now filters out invalid usernames (e.g. true) from Web App Policies;
 * Added support for the SPSiteUrl Resource;
 * Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
+* Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -1202,7 +1203,8 @@ function Read-SPSitesAndWebs ()
                 }
                 else
                 {
-                    $results.Description = $results.Description.Replace("`"", "'")
+                    $results.Description = $results.Description.Replace("`"", "'").Replace("`r`n", ' `
+                    ')
                 }
                 $dependsOnClause = Get-DSCDependsOnBlock($dependsOnItems)
                 $results = Repair-Credentials -results $results
@@ -1264,6 +1266,8 @@ function Read-SPSitesAndWebs ()
                             $paramsWeb = Get-DSCFakeParameters -ModulePath $moduleWeb
                             $paramsWeb.Url = $webUrl
                             $resultsWeb = Get-TargetResource @paramsWeb
+                            $resultsWeb.Description = $resultsWeb.Description.Replace("`"", "'").Replace("`r`n", ' `
+                            ')
                             $Script:dscConfigContent += "        SPWeb " + [System.Guid]::NewGuid().toString() + "`r`n"
                             $Script:dscConfigContent += "        {`r`n"
                             $resultsWeb = Repair-Credentials -results $resultsWeb
