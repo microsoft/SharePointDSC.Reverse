@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.0.2
+.VERSION 2.5.0.3
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -1695,13 +1695,14 @@ function Read-SPWebAppPolicy()
 {
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPWebAppPolicy\MSFT_SPWebAppPolicy.psm1")
     Import-Module $module
-    $params = Get-DSCFakeParameters -ModulePath $module
+
     $webApps = Get-SPWebApplication
 
     $i = 1
     $total = $webApps.Length
     foreach($webApp in $webApps)
     {
+        $params = Get-DSCFakeParameters -ModulePath $module
         $webAppUrl = $webApp.Url
         Write-Host "Scanning Web App Policies [$i/$total] {$webAppUrl}"
 
@@ -1718,14 +1719,16 @@ function Read-SPWebAppPolicy()
 
         if($null -ne $results.Members)
         {
+            $newMembers = @()
             foreach($member in $results.Members)
             {
                 if($member.UserName.Contains("\"))
                 {
                     $resultPermission = Get-SPWebPolicyPermissions -params $member
-                    $results.Members += $resultPermission
+                    $newMembers += $resultPermission
                 }
             }
+            $params.Members = $newMembers
         }
 
         if($null -eq $results.MembersToExclude)
@@ -1906,7 +1909,7 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
 
     $ups = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
 
-    $sites = Get-SPSite
+    $sites = Get-SPSite -Limit All
     if($sites.Length -gt 0)
     {
         $context = Get-SPServiceContext $sites[0]
@@ -4056,12 +4059,14 @@ function Read-SPUserProfileProperty()
         <# WA - Bug in SPDSC 1.7.0.0 if there is a sync connection, then we need to skip the properties. #>
         if($null -ne $userProfileConfigManager.ConnectionManager.PropertyMapping)
         {
+            $i = 1;
+            $total = $properties.Length;
             foreach($property in $properties)
             {
                 try
                 {
                     $params.Name = $property.Name
-
+                    Write-Host "    -> Scanning User Profile Property [$i/$total] {$($property.Name)}"
                     $params.UserProfileService = $userProfileServiceApp[0].DisplayName
                     $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
@@ -4105,6 +4110,7 @@ function Read-SPUserProfileProperty()
                     $Script:ErrorLog += "[User Profile Property]" + $property.Name + "`r`n"
                     $Script:ErrorLog += "$_`r`n`r`n"
                 }
+                $i++
             }
         }
     }
@@ -4357,7 +4363,7 @@ function Read-SPServiceAppSecurity()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPServiceAppSecurity\MSFT_SPServiceAppSecurity.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $serviceApplications = Get-SPServiceApplication | Where-Object {$_.TypeName -ne "Usage and Health Data Collection Service Application" -and $_.TypeName -ne "State Service"}
+    $serviceApplications = Get-SPServiceApplication | Where-Object {$_.GetType().Name -ne "SPUsageApplication" -and $_.GetType().Name -ne "StateServiceApplication"}
 
     foreach($serviceApp in $serviceApplications)
     {
