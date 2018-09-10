@@ -17,12 +17,14 @@
 .RELEASENOTES
 
 * Updated Requirement for SharePointDSC 2.5.0.0;
-* Fixes issue with Central Admin Invalid Port;
-* Now filters out invalid usernames (e.g. true) from Web App Policies;
+* Fixed issue with Central Admin Invalid Port;
+* Filtered out invalid usernames (e.g. true) from Web App Policies;
 * Added support for the SPSiteUrl Resource;
 * Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
 * Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
 * Fixed issue with Other languages than english when extracting configuration database;
+* Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
+* Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -30,7 +32,7 @@
 <#
 
 .DESCRIPTION
- Extracts the DSC Configuration of an existing SharePoint environment, allowing you to analyze it or to replicate the farm.
+ Extracts the DSC Configuration of an existing SharePoint 2013, 2016 or 2019 environment, allowing you to analyze it or to replicate the farm.
 
 #>
 
@@ -1211,8 +1213,14 @@ function Read-SPSitesAndWebs ()
                 $results = Repair-Credentials -results $results
 
                 $ownerAlias = Get-Credentials -UserName $results.OwnerAlias
+                $plainTextUser = $false;
+                if(!$ownerAlias)
+                {
+                    $plainTextUser = $true
+                    $ownerAlias = $results.OwnerAlias
+                }
                 $currentBlock = ""
-                if($null -ne $ownerAlias)
+                if($null -ne $ownerAlias -and !$plainTextUser)
                 {
                     $results.OwnerAlias = (Resolve-Credentials -UserName $results.OwnerAlias) + ".UserName"
                 }
@@ -1226,7 +1234,7 @@ function Read-SPSitesAndWebs ()
                     }
                     else
                     {
-                        Add-ReverseDSCUserName -UserName $results.SecondaryOwnerAlias
+                        $secondaryOwner = $results.SecondaryOwnerAlias
                     }
                 }
                 $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
@@ -1838,8 +1846,9 @@ function Read-StateServiceApplication ($modulePath, $params)
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             $i++
