@@ -22,6 +22,7 @@
 * Added support for the SPSiteUrl Resource;
 * Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
 * Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
+* Fixed issue with Other languages than english when extracting configuration database;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -759,7 +760,7 @@ function Read-SPFarm (){
     $results.Remove("Passphrase");
 
     <# WA - Bug in 1.6.0.0 Get-TargetResource not returning name if aliases are used #>
-    $configDB = Get-SPDatabase | Where-Object{$_.Type -eq "Configuration Database"}
+    $configDB = Get-SPDatabase | Where-Object{$_.GetType().Name -eq "SPConfigurationDatabase"}
     $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
     if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
