@@ -17,8 +17,8 @@
 .RELEASENOTES
 
 * Updated Requirement for SharePointDSC 2.5.0.0;
-* Fixes issue with Central Admin Invalid Port;
-* Now filters out invalid usernames (e.g. true) from Web App Policies;
+* Fixed issue with Central Admin Invalid Port;
+* Filtered out invalid usernames (e.g. true) from Web App Policies;
 * Added support for the SPSiteUrl Resource;
 * Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
 * Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
@@ -32,7 +32,7 @@
 <#
 
 .DESCRIPTION
- Extracts the DSC Configuration of an existing SharePoint environment, allowing you to analyze it or to replicate the farm.
+ Extracts the DSC Configuration of an existing SharePoint 2013, 2016 or 2019 environment, allowing you to analyze it or to replicate the farm.
 
 #>
 
