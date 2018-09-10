@@ -23,6 +23,7 @@
 * Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
 * Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
 * Fixed issue with Other languages than english when extracting configuration database;
+* Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -1838,8 +1839,9 @@ function Read-StateServiceApplication ($modulePath, $params)
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             $i++
