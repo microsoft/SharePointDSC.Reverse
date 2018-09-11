@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.1.2
+.VERSION 2.5.1.3
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -31,10 +31,10 @@
 * Fixes for French (and multilingual) Service Applications;
 * Web App Policies now using strings for unmanaged usernames;
 * Fixed issue with BCS Search Content Source extraction (still not supported with current version);
-* Updated reference to ReverseDSC 1.9.2.10 to support Integer Arrays;
+* Updated reference to ReverseDSC 1.9.2.11 to support Integer Arrays;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.10"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
 
 <#
 
