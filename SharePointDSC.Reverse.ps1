@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.1.0
+.VERSION 2.5.1.1
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -28,6 +28,8 @@
 * Removed the invalid Ensure parameter from being extracted from SPUserProfileSyncConnection;
 * Fixed an issue with SPWebAppPolicy not properly converting Members CIMInstance;
 * Removed the requirement to provide credentials for each service application;
+* Fixes for French (and multilingual) Service Applications;
+* Web App Policies now using strings for unmanaged usernames;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -2101,7 +2103,7 @@ function Read-ManagedMetadataServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $mms = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Managed Metadata Service"}
+    $mms = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "MetadataWebServiceApplication"}
     if (Get-Command "Get-SPMetadataServiceApplication" -errorAction SilentlyContinue)
     {
         $i = 1
@@ -2746,7 +2748,7 @@ function Read-BCSServiceApplication ($modulePath, $params)
         $params = Get-DSCFakeParameters -ModulePath $module
     }
 
-    $bcsa = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Business Data Connectivity Service Application"}
+    $bcsa = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "BdcServiceApplication"}
 
     foreach($bcsaInstance in $bcsa)
     {
@@ -2797,7 +2799,7 @@ function CheckDBForAliases()
 <## This function retrieves settings related to the Search Service Application. #>
 function Read-SearchServiceApplication()
 {
-    $searchSA = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Search Service Application"}
+    $searchSA = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "SearchServiceApplication"}
 
     $i = 1
     $total = $searchSA.Length
@@ -2963,7 +2965,10 @@ function Get-SPWebPolicyPermissions($params)
                 if(!($params[$key].ToUpper() -like "NT AUTHORITY*"))
                 {
                     $memberUserName = Get-Credentials -UserName $params[$key]
-                    $isCredentials = $true
+                    if($memberUserName)
+                    {
+                        $isCredentials = $true
+                    }
                 }
             }
 
