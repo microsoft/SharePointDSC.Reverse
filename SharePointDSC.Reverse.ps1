@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.1.3
+.VERSION 2.5.2.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -32,6 +32,9 @@
 * Web App Policies now using strings for unmanaged usernames;
 * Fixed issue with BCS Search Content Source extraction (still not supported with current version);
 * Updated reference to ReverseDSC 1.9.2.11 to support Integer Arrays;
+* Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
+* Updated to capture Web level Result Sources;
+* Improved the StandAlone extraction;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -154,7 +157,14 @@ function Orchestrator
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
-            Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
+            if($Standalone)
+            {
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description ""
+            }
+            else {
+                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
+            }
+           
 
             if($serverNumber -eq 1)
             {
@@ -169,7 +179,13 @@ function Orchestrator
             $currentServer = Get-SPServer $Script:currentServerName
             if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
             {
-                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
+                if($StandAlone)
+                {
+                    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "StandAlone" -Description "MinRole for the current server;"
+                }
+                else {
+                    Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
+                }
             }
 
             if($serverNumber -eq 1 -or !$nodeLoopDone)
@@ -789,6 +805,11 @@ function Read-SPFarm (){
         $results.Add("RunCentralAdmin", $RunCentralAdmin)
     }
 
+    if($StandAlone)
+    {
+        $results.RunCentralAdmin = $true
+    }
+
     if($spMajorVersion -ge 16)
     {
         if(!$results.Contains("ServerRole"))
@@ -904,7 +925,10 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
+            if($results.URl.Contains(":") -and $results.Port)
+            {
+                $results.Remove("Port")
+            }
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             if($convertToVariable)
             {
@@ -1633,7 +1657,15 @@ function Read-SPServiceInstance($Servers)
                 $Script:ErrorLog += "$_`r`n`r`n"
             }
         }
-        Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
+
+        if($StandAlone)
+        {
+            Add-ConfigurationDataEntry -Node $env:ComputerName -Key "ServiceInstances" -Value $serviceStatuses
+        }
+        else
+        {
+            Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
+        }
     }
 }
 
@@ -3450,6 +3482,57 @@ function Read-SPSearchResultSource()
                             $Script:dscConfigContent += "        }`r`n"
                         }
                         $j++
+                    }
+
+                    <# Include Web Level Content Sources #>
+                    if(!$SkipSitesAndWebs)
+                    {
+                        $webApplications = Get-SPWebApplication
+                        foreach($webApp in $webApplications)
+                        {
+                            foreach($site in $webApp.Sites)
+                            {
+                                try
+                                {
+                                    foreach($web in $site.AllWebs)
+                                    {
+                                        $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
+                                        $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
+                                        $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
+                                        $filter.IncludeHigherLevel = $false
+                                        $sources = $fedman.ListSources($filter,$true)
+                                        
+                                        foreach($source in $sources)
+                                        {
+                                            $providers = $fedman.ListProviders()
+                                            $provider = $providers.Values | Where-Object -FilterScript {
+                                                $_.Id -eq $sources[0].ProviderId 
+                                            }
+
+                                            $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                            $Script:dscConfigContent += "        {`r`n"
+                                            $Script:dscConfigContent += "            Name                 = `"" + $source.Name + "`"`r`n"
+                                            $Script:dscConfigContent += "            SearchServiceAppName = `"" + $serviceName + "`"`r`n"
+                                            $Script:dscConfigContent += "            Query                = `"" + $source.QueryTransform.QueryTemplate + "`"`r`n"
+                                            $Script:dscConfigContent += "            ProviderType         = `"" + $provider.Name + "`"`r`n"
+
+                                            if($source.ConnectionUrlTemplate)
+                                            {
+                                                $Script:dscConfigContent += "            ConnectionUrl         = `"" + $source.ConnectionUrlTemplate + "`"`r`n"
+                                            }
+
+                                            $Script:dscConfigContent += "            Ensure               = `"Present`"`r`n"
+                                            $Script:dscConfigContent += "            PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                                            $Script:dscConfigContent += "        }`r`n"
+                                        }
+
+                                        $web.Dispose()
+                                    }
+                                }                                
+                                catch{}
+                                $site.Dispose()
+                            }
+                        }
                     }
                 }
             }
