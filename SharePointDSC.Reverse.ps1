@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.0.4
+.VERSION 2.5.1.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -26,6 +26,8 @@
 * Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
 * Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
 * Removed the invalid Ensure parameter from being extracted from SPUserProfileSyncConnection;
+* Fixed an issue with SPWebAppPolicy not properly converting Members CIMInstance;
+* Removed the requirement to provide credentials for each service application;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -884,11 +886,12 @@ function Read-SPWebApplications (){
             $results = Repair-Credentials -results $results
 
             $appPoolAccount = Get-Credentials $results.ApplicationPoolAccount
-            if($null -eq $appPoolAccount)
+            $convertToVariable = $false
+            if($appPoolAccount)
             {
-                Save-Credentials -UserName $results.ApplicationPoolAccount
+                $convertToVariable = $true
+                $results.ApplicationPoolAccount = (Resolve-Credentials -UserName $results.ApplicationPoolAccount) + ".UserName"
             }
-            $results.ApplicationPoolAccount = (Resolve-Credentials -UserName $results.ApplicationPoolAccount) + ".UserName"
 
             if($null -eq $results.Get_Item("AllowAnonymous"))
             {
@@ -899,7 +902,10 @@ function Read-SPWebApplications (){
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
+            if($convertToVariable)
+            {
+                $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
+            }
             $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "DatabaseServer"
             $Script:dscConfigContent += $currentDSCBlock
             $Script:dscConfigContent += "        }`r`n"
@@ -1058,18 +1064,22 @@ function Read-SPServiceApplicationPools
             $results = Repair-Credentials -results $results
 
             $serviceAccount = Get-Credentials $results.ServiceAccount
-            if($null -eq $serviceAccount)
+            $convertToVariable = $false
+            if($serviceAccount)
             {
-                Save-Credentials -UserName $results.ServiceAccount
+                $convertToVariable = $true
+                $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
             }
-            $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
 
             if($null -eq $results.Get_Item("AllowAnonymous"))
             {
                 $results.Remove("AllowAnonymous")
             }
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
+            if($convertToVariable)
+            {
+                $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
+            }
             $Script:dscConfigContent += $currentDSCBlock
 
             $Script:dscConfigContent += "        }`r`n"
@@ -1518,14 +1528,22 @@ function Read-SPManagedAccounts()
             $results = Repair-Credentials -results $results
 
             $accountName = Get-Credentials -UserName $managedAccount.UserName
-            if($null -eq $accountName)
+            $convertToVariable = $false
+            if($accountName)
             {
-                Save-Credentials -UserName $managedAccount.UserName
+                $convertToVariable = $true
+                $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
             }
-            $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
+            else
+            {
+                $results.AccountName = $managedAccount.UserName
+            }
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
+            if($convertToVariable)
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
+            }
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -1742,7 +1760,7 @@ function Read-SPWebAppPolicy()
                     $newMembers += $resultPermission
                 }
             }
-            $params.Members = $newMembers
+            $results.Members = $newMembers
         }
 
         if($null -eq $results.MembersToExclude)
@@ -2183,11 +2201,14 @@ function Set-TermStoreAdministratorsBlock($TermStoreAdminsLine)
         if(!($admin -like "BUILTIN*"))
         {
             $account = Get-Credentials -UserName $admin
-            if($null -eq $account)
+            if($account)
             {
-                Save-Credentials -UserName $admin
+                $newArray += (Resolve-Credentials -UserName $admin) + ".UserName"
             }
-            $newArray += (Resolve-Credentials -UserName $admin) + ".UserName"
+            else
+            {
+                $newArray += $admin
+            }
         }
         else
         {
@@ -2912,12 +2933,17 @@ function Get-SPServiceAppSecurityMembers($member)
     if($member.AccessLevel -ne $null -and !($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid) -and $member.AccessLevel -ne "")
     {
         $userName = Get-Credentials -UserName $member.UserName
-        if($null -eq $userName)
+        $value = $userName
+        if($userName)
         {
-            Save-Credentials -UserName $member.UserName
+            $value = (Resolve-Credentials -UserName $member.UserName) + ".UserName;"
         }
-        return "MSFT_SPServiceAppSecurityEntry {`
-            Username    = " + (Resolve-Credentials -UserName $member.UserName) + ".UserName;`
+        else
+        {
+            $value = $member.UserName
+        }
+        return "MSFT_SPServiceAppSecurityEntry { `
+            Username    = `"" + $value + "`" `
             AccessLevel = `"" + $member.AccessLevel + "`";`
         }"
     }
@@ -2937,10 +2963,6 @@ function Get-SPWebPolicyPermissions($params)
                 if(!($params[$key].ToUpper() -like "NT AUTHORITY*"))
                 {
                     $memberUserName = Get-Credentials -UserName $params[$key]
-                    if($null -eq $memberUserName)
-                    {
-                        Save-Credentials -UserName $params[$key]
-                    }
                     $isCredentials = $true
                 }
             }
@@ -3754,12 +3776,15 @@ function Set-SPFarmAdministrators($members)
         if(!($member.ToUpper() -like "BUILTIN*"))
         {
             $memberUser = Get-Credentials -UserName $member
-            if($null -eq $memberUser)
+            if($memberUser)
             {
-                Save-Credentials -UserName $member
+                $accountName = Resolve-Credentials -UserName $member
+                $newMemberList += $accountName + ".UserName"
             }
-            $accountName = Resolve-Credentials -UserName $member
-            $newMemberList += $accountName + ".UserName"
+            else
+            {
+                $newMemberList += $member
+            }
         }
         else
         {
@@ -3958,11 +3983,10 @@ function Read-SPFarmPropertyBag()
         if($results.Key -eq "SystemAccountName")
         {
             $accountName = Get-Credentials -UserName $results.Value
-            if($null -eq $accountName)
+            if($accountName)
             {
-                Save-Credentials -UserName $results.Value
+                $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
             }
-            $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
@@ -4090,27 +4114,6 @@ function Read-SPUserProfileProperty()
                     $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $results = Get-TargetResource @params
-
-                    if($results.Type.ToString().ToLower() -eq "string (single value)")
-                    {
-                        $results.Type = "String"
-                    }
-                    elseif($results.Type.ToString().ToLower() -eq "string (multi value)")
-                    {
-                        $results.Type = "StringMultiValue"
-                    }
-                    elseif($results.Type.ToString().ToLower() -eq "unique identifier")
-                    {
-                        $results.Type = "Guid"
-                    }
-                    elseif($results.Type.ToString().ToLower() -eq "big integer")
-                    {
-                        $results.Type = "BigInteger"
-                    }
-                    elseif($results.Type.ToString().ToLower() -eq "date time")
-                    {
-                        $results.Type = "DateTime"
-                    }
 
                     <# WA - Bug in SPDSC 1.7.0.0 where param returned is named UserProfileServiceAppName instead of
                             just UserProfileService. #>
@@ -4324,13 +4327,17 @@ function Read-SPDistributedCacheService()
         $results.Remove("ServerProvisionOrder")
 
         $serviceAccount = Get-Credentials -UserName $results.ServiceAccount
-        if($null -eq $serviceAccount)
+        $convertToVariable = $false
+        if($serviceAccount)
         {
-            Save-Credentials -UserName $serviceAccount
+            $convertToVariable = $true
+            $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
         }
-        $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
         $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServiceAccount"
+        if($convertToVariable)
+        {
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServiceAccount"
+        }
         $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
