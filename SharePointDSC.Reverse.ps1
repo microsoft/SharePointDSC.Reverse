@@ -1530,22 +1530,13 @@ function Read-SPManagedAccounts()
             $results = Repair-Credentials -results $results
 
             $accountName = Get-Credentials -UserName $managedAccount.UserName
-            $convertToVariable = $false
-            if($accountName)
+            if(!$accountName)
             {
-                $convertToVariable = $true
-                $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
+                Save-Credentials -UserName $managedAccount.UserName
             }
-            else
-            {
-                $results.AccountName = $managedAccount.UserName
-            }
-
+            $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            if($convertToVariable)
-            {
-                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
-            }
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -1575,7 +1566,7 @@ function Read-SPServiceInstance($Servers)
         {
             try
             {
-                $serviceTypeName = $serviceInstance.TypeName
+                $serviceTypeName = $serviceInstance.GetType().Name
                 Write-Host "    -> Scanning instance [$i/$total] {$serviceTypeName}"
 
                 if($serviceInstance.Status -eq "Online")
@@ -1589,7 +1580,7 @@ function Read-SPServiceInstance($Servers)
 
                 $currentService = @{Name = $serviceInstance.TypeName; Ensure = $ensureValue}
 
-                if($serviceInstance.TypeName -ne "Distributed Cache" -and $serviceInstance.TypeName -ne "User Profile Synchronization Service")
+                if($serviceTypeName -ne "SPDistributedCacheServiceInstance" -and $serviceTypeName -ne "ProfileSynchronizationServiceInstance")
                 {
                     $serviceStatuses += $currentService
                 }
@@ -1597,11 +1588,11 @@ function Read-SPServiceInstance($Servers)
                 {
                     $servicesMasterList += $serviceTypeName
                     Write-Verbose $serviceTypeName
-                    if($serviceTypeName -eq "Distributed Cache")
+                    if($serviceTypeName -eq "SPDistributedCacheServiceInstance")
                     {
                         # Do Nothing - This is handled by its own call later on.
                     }
-                    elseif($serviceTypeName -eq "User Profile Synchronization Service")
+                    elseif($serviceTypeName -eq "ProfileSynchronizationServiceInstance")
                     {
                         $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileSyncService\MSFT_SPUserProfileSyncService.psm1")
                         Import-Module $module
@@ -1692,7 +1683,7 @@ function Read-SPMachineTranslationServiceApp()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $machineTranslationServiceApps = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Machine Translation Service"}
+    $machineTranslationServiceApps = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "TranslationServiceApplication"}
     $i = 1
     $total = $machineTranslationServiceApps.Length
     foreach($machineTranslation in $machineTranslationServiceApps)
@@ -1942,7 +1933,7 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
         $params = Get-DSCFakeParameters -ModulePath $module
     }
 
-    $ups = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
+    $ups = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "UserProfileApplication"}
 
     $sites = Get-SPSite -Limit All
     if($sites.Length -gt 0)
@@ -2029,7 +2020,7 @@ function Read-SecureStoreServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Secure Store Service Application"}
+    $ssas = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "SecureStoreServiceApplication"}
 
     $i = 1
     $total = $ssas
@@ -2226,7 +2217,7 @@ function Read-SPWordAutomationServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Word Automation Services"}
+    $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "WordServiceApplication"}
 
     $i = 1
     $total = $was.Length
@@ -2274,7 +2265,7 @@ function Read-SPVisioServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Visio Graphics Service Application"}
+    $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "VisioGraphicsServiceApplication"}
 
     $i = 1
     $total = $was.Length
@@ -2372,7 +2363,7 @@ function Read-SPWorkManagementServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "Work Management Service Application"}
+    $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "WorkManagementServiceApplication"}
     foreach($wa in $was)
     {
         try
@@ -2458,7 +2449,7 @@ function Read-SPPerformancePointServiceApplication()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $was = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "PerformancePoint Service Application"}
+    $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "BIMonitoringServiceApplication"}
     foreach($wa in $was)
     {
         try
@@ -3202,7 +3193,7 @@ function Read-SPAppCatalog()
 
 function Read-SPAppDomain()
 {
-    $serviceApp = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "App Management Service Application"}
+    $serviceApp = Get-SPServiceApplication | Where-Object{$_.GetType().NAme -eq "AppManagementServiceApplication"}
     $appDomain =  Get-SPAppDomain
     if($serviceApp.Length -ge 1 -and $appDomain.Length -ge 1)
     {
@@ -4010,7 +4001,7 @@ function Read-SPUserProfileServiceAppPermissions()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileServiceAppPermissions\MSFT_SPUserProfileServiceAppPermissions.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $proxies = Get-SPServiceApplicationProxy | Where-Object {$_.TypeName -eq "User Profile Service Application Proxy"}
+    $proxies = Get-SPServiceApplicationProxy | Where-Object {$_.GetType().Name -eq "UserProfileApplicationProxy"}
 
     foreach($proxy in $proxies)
     {
@@ -4038,7 +4029,7 @@ function Read-SPUserProfileSyncConnection()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileSyncConnection\MSFT_SPUserProfileSyncConnection.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $userProfileServiceApps = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
+    $userProfileServiceApps = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "UserProfileApplication"}
     $caURL = (Get-SpWebApplication -IncludeCentralAdministration |
         Where-Object -FilterScript{$_.IsAdministrationWebApplication -eq $true}).Url
     $context = Get-SPServiceContext -Site $caURL
@@ -4102,7 +4093,7 @@ function Read-SPUserProfileProperty()
         $properties = $userProfileConfigManager.GetPropertiesWithSection()
         $properties = $properties | Where-Object{$_.IsSection -eq $false}
 
-        $userProfileServiceApp = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
+        $userProfileServiceApp = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "UserProfileApplication"}
 
         <# WA - Bug in SPDSC 1.7.0.0 if there is a sync connection, then we need to skip the properties. #>
         if($null -ne $userProfileConfigManager.ConnectionManager.PropertyMapping)
@@ -4158,7 +4149,7 @@ function Read-SPUserProfileSection()
         $properties = $userProfileConfigManager.GetPropertiesWithSection()
         $sections = $properties | Where-Object{$_.IsSection -eq $true}
 
-        $userProfileServiceApp = Get-SPServiceApplication | Where-Object{$_.TypeName -eq "User Profile Service Application"}
+        $userProfileServiceApp = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "UserProfileApplication"}
 
         foreach($section in $sections)
         {
@@ -4230,7 +4221,7 @@ function Read-SPSubscriptionSettingsServiceApp()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSubscriptionSettingsServiceApp\MSFT_SPSubscriptionSettingsServiceApp.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $serviceApps = Get-SPServiceApplication | Where-Object {$_.TypeName -eq "Microsoft SharePoint Foundation Subscription Settings Service Application"}
+    $serviceApps = Get-SPServiceApplication | Where-Object {$_.GetType().Name -eq "SPSubscriptionSettingsServiceApplication"}
 
     foreach($subSetting in $serviceApps)
     {
@@ -4261,7 +4252,7 @@ function Read-SPAppManagementServiceApp()
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPAppManagementServiceApp\MSFT_SPAppManagementServiceApp.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
-    $serviceApps = Get-SPServiceApplication | Where-Object {$_.TypeName -eq "App Management Service Application"}
+    $serviceApps = Get-SPServiceApplication | Where-Object {$_.GetType().Name -eq "AppManagementServiceApplication"}
 
     foreach($appManagement in $serviceApps)
     {
