@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.1.1
+.VERSION 2.5.1.2
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -30,9 +30,11 @@
 * Removed the requirement to provide credentials for each service application;
 * Fixes for French (and multilingual) Service Applications;
 * Web App Policies now using strings for unmanaged usernames;
+* Fixed issue with BCS Search Content Source extraction (still not supported with current version);
+* Updated reference to ReverseDSC 1.9.2.10 to support Integer Arrays;
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.9"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.10"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
 
 <#
 
@@ -2859,10 +2861,9 @@ function Read-SearchServiceApplication()
 
                     if(!$source.Type -eq "CustomRepository")
                     {
+                        $resultsContentSource = Get-TargetResource @paramsContentSource
                         $Script:dscConfigContent += "        SPSearchContentSource " + $contentSource.Name.Replace(" ", "") + $sscsGuid + "`r`n"
                         $Script:dscConfigContent += "        {`r`n"
-
-                        $resultsContentSource = Get-TargetResource @paramsContentSource
 
                         $searchScheduleModulePath = Resolve-Path ($Script:SPDSCPath + "\Modules\SharePointDsc.Search\SPSearchContentSource.Schedules.psm1")
                         Import-Module -Name $searchScheduleModulePath
@@ -4060,6 +4061,10 @@ function Read-SPUserProfileSyncConnection()
                         if($results.Contains("Ensure"))
                         {
                             $results.Remove("Ensure")
+                        }
+                        if(!$results.UseDisabledFilter)
+                        {
+                            $results.Remove("UseDisabledFilter")
                         }
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                         $Script:dscConfigContent += "        }`r`n"
