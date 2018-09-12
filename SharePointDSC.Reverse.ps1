@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.2.0
+.VERSION 2.5.2.1
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -35,6 +35,8 @@
 * Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
 * Updated to capture Web level Result Sources;
 * Improved the StandAlone extraction;
+* Changed Order of extraction between SPWebApplication and SPCOntentDatabase to have the DBs created first;
+* Removed requirement to have a Global Search Center for Result Source Extraction;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -205,6 +207,12 @@ function Orchestrator
                 Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPManagedAccounts
 
+                if($SkipSitesAndWebs)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPContentDatabase
+                }
+
                 Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPWebApplications
 
@@ -222,9 +230,6 @@ function Orchestrator
 
                 if(!$SkipSitesAndWebs)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPContentDatabase
-
                     Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPQuotaTemplate
 
@@ -1185,7 +1190,7 @@ function Read-SPSitesAndWebs ()
                 $params = Get-DSCFakeParameters -ModulePath $module
                 $siteGuid = [System.Guid]::NewGuid().toString()
                 $siteTitle = $spSite.RootWeb.Title
-                if($siteTitle -eq $null)
+                if(!$siteTitle)
                 {
                     $siteTitle = "SiteCollection"
                 }
@@ -3441,97 +3446,99 @@ function Read-SPSearchResultSource()
     {
         try
         {
-            if($null -ne $ssa)
+            if($ssa)
             {
                 $serviceName = $ssa.DisplayName
                 Write-Host "Scanning Results Sources for Search Service Application [$i/$total] {$serviceName}"
-                $ssa = Get-SPEnterpriseSearchServiceApplication -Identity $ssa
-                $searchSiteUrl = $ssa.SearchCenterUrl -replace "/pages"
-                $searchSite = Get-SPWeb -Identity $searchSiteUrl -ErrorAction SilentlyContinue
+                $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
+                $searchOwner = Get-SPEnterpriseSearchOwner -Level SSA
+                $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
+                $resultSources = $fedman.ListSources($filter,$true)
 
-                if(!$null -eq $searchSite)
+                $j = 1
+                foreach($resultSource in $resultSources)
                 {
-                    $adminNamespace = "Microsoft.Office.Server.Search.Administration"
-                    $objectLevel = [Microsoft.Office.Server.Search.Administration.SearchObjectLevel]
-                    $searchOwner = New-Object -TypeName "$adminNamespace.SearchObjectOwner" `
-                                            -ArgumentList @(
-                                                $objectLevel::Ssa,
-                                                $searchSite
-                                            )
-                    $resultSources = Get-SPEnterpriseSearchResultSource -SearchApplication $ssa -Owner $searchOwner
-                    $j = 1
-                    $totalRS = $resultSources.Length
-                    foreach($resultSource in $resultSources)
+                    <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
+                    if($resultSource.Name -ne "Local SharePoint Graph")
                     {
-                        <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
-                        if($resultSource.Name -ne "Local SharePoint Graph")
-                        {
-                            $rsName = $resultSource.Name
-                            Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
-                            $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                            $Script:dscConfigContent += "        {`r`n"
-                            $params.SearchServiceAppName = $serviceName
-                            $params.Name = $rsName
-                            $results = Get-TargetResource @params
-                            if($null -eq $results.Get_Item("ConnectionUrl"))
-                            {
-                                $results.Remove("ConnectionUrl")
-                            }
-                            $results = Repair-Credentials -results $results
-                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                            $Script:dscConfigContent += "        }`r`n"
+                        $rsName = $resultSource.Name
+                        Write-Host "    -> Scanning Results Source [$j] {$rsName}"
+                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $params.SearchServiceAppName = $serviceName
+                        $params.Name = $rsName
+                        $results = Get-TargetResource @params
+
+                        $providers = $fedman.ListProviders()
+                        $provider = $providers.Values | Where-Object -FilterScript {
+                            $_.Id -eq $resultSource.ProviderId 
                         }
-                        $j++
-                    }
 
-                    <# Include Web Level Content Sources #>
-                    if(!$SkipSitesAndWebs)
-                    {
-                        $webApplications = Get-SPWebApplication
-                        foreach($webApp in $webApplications)
+                        if($null -eq $results.Get_Item("ConnectionUrl"))
                         {
-                            foreach($site in $webApp.Sites)
+                            $results.Remove("ConnectionUrl")
+                        }
+                        $results.Query = $resultSource.QueryTransform.QueryTemplate
+                        $results.ProviderType = $provider.Name
+                        if($resultSource.ConnectionUrlTemplate)
+                        {
+                            $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
+                        }
+
+                        $results = Repair-Credentials -results $results
+                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                    $j++
+                }
+
+                <# Include Web Level Content Sources #>
+                if(!$SkipSitesAndWebs)
+                {
+                    $webApplications = Get-SPWebApplication
+                    foreach($webApp in $webApplications)
+                    {
+                        foreach($site in $webApp.Sites)
+                        {
+                            try
                             {
-                                try
+                                foreach($web in $site.AllWebs)
                                 {
-                                    foreach($web in $site.AllWebs)
-                                    {
-                                        $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
-                                        $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
-                                        $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
-                                        $filter.IncludeHigherLevel = $false
-                                        $sources = $fedman.ListSources($filter,$true)
+                                    $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
+                                    $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
+                                    $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
+                                    $filter.IncludeHigherLevel = $false
+                                    $sources = $fedman.ListSources($filter,$true)
                                         
-                                        foreach($source in $sources)
-                                        {
-                                            $providers = $fedman.ListProviders()
-                                            $provider = $providers.Values | Where-Object -FilterScript {
-                                                $_.Id -eq $sources[0].ProviderId 
-                                            }
-
-                                            $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                            $Script:dscConfigContent += "        {`r`n"
-                                            $Script:dscConfigContent += "            Name                 = `"" + $source.Name + "`"`r`n"
-                                            $Script:dscConfigContent += "            SearchServiceAppName = `"" + $serviceName + "`"`r`n"
-                                            $Script:dscConfigContent += "            Query                = `"" + $source.QueryTransform.QueryTemplate + "`"`r`n"
-                                            $Script:dscConfigContent += "            ProviderType         = `"" + $provider.Name + "`"`r`n"
-
-                                            if($source.ConnectionUrlTemplate)
-                                            {
-                                                $Script:dscConfigContent += "            ConnectionUrl         = `"" + $source.ConnectionUrlTemplate + "`"`r`n"
-                                            }
-
-                                            $Script:dscConfigContent += "            Ensure               = `"Present`"`r`n"
-                                            $Script:dscConfigContent += "            PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-                                            $Script:dscConfigContent += "        }`r`n"
+                                    foreach($source in $sources)
+                                    {
+                                        $providers = $fedman.ListProviders()
+                                        $provider = $providers.Values | Where-Object -FilterScript {
+                                            $_.Id -eq $source.ProviderId 
                                         }
 
-                                        $web.Dispose()
+                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                        $Script:dscConfigContent += "        {`r`n"
+                                        $Script:dscConfigContent += "            Name                 = `"" + $source.Name + "`"`r`n"
+                                        $Script:dscConfigContent += "            SearchServiceAppName = `"" + $serviceName + "`"`r`n"
+                                        $Script:dscConfigContent += "            Query                = `"" + $source.QueryTransform.QueryTemplate + "`"`r`n"
+                                        $Script:dscConfigContent += "            ProviderType         = `"" + $provider.Name + "`"`r`n"
+
+                                        if($source.ConnectionUrlTemplate)
+                                        {
+                                            $Script:dscConfigContent += "            ConnectionUrl         = `"" + $source.ConnectionUrlTemplate + "`"`r`n"
+                                        }
+
+                                        $Script:dscConfigContent += "            Ensure               = `"Present`"`r`n"
+                                        $Script:dscConfigContent += "            PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                                        $Script:dscConfigContent += "        }`r`n"
                                     }
-                                }                                
-                                catch{}
-                                $site.Dispose()
+
+                                    $web.Dispose()
+                                }
                             }
+                            catch{}
+                            $site.Dispose()
                         }
                     }
                 }
