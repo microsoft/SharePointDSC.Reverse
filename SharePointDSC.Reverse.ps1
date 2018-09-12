@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.2.1
+.VERSION 2.5.2.2
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -37,6 +37,7 @@
 * Improved the StandAlone extraction;
 * Changed Order of extraction between SPWebApplication and SPCOntentDatabase to have the DBs created first;
 * Removed requirement to have a Global Search Center for Result Source Extraction;
+* Fixed Exclusion crawl rule issue where invalid parameters were passed;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -3585,6 +3586,11 @@ function Read-SPSearchCrawlRule()
                     $params.Path = $crPath
                     $params.Remove("CertificateName")
                     $results = Get-TargetResource @params
+
+                    if($results.RuleType -eq "ExclusionRule" -and $results.AuthenticationType)
+                    {
+                        $results.Remove("AuthenticationType")
+                    }
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
