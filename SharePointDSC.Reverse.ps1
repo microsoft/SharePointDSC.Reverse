@@ -34,10 +34,11 @@
 * Updated reference to ReverseDSC 1.9.2.11 to support Integer Arrays;
 * Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
 * Updated to capture Web level Result Sources;
-* Improved the StandAlone extraction;
+* Improved and fixed the StandAlone extraction;
 * Changed Order of extraction between SPWebApplication and SPCOntentDatabase to have the DBs created first;
 * Removed requirement to have a Global Search Center for Result Source Extraction;
 * Fixed Exclusion crawl rule issue where invalid parameters were passed;
+* Fixed an Issue with First Index Partition when extracting SPSearchTopology;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -501,7 +502,18 @@ function Orchestrator
                 if(!$serviceLoopDone)
                 {
                     Read-SPServiceInstance -Servers $serverAddresses
-                    $serviceLoopDone = $true
+                    
+                    $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                    $Script:dscConfigContent += "            {`r`n"
+                    $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                    $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                    $Script:dscConfigContent += "            }`r`n"
+                    $Script:dscConfigContent += "        }`r`n"
                 }
             }
 
@@ -3415,7 +3427,7 @@ function Read-SPSearchTopology()
 
                 if($results.FirstPartitionDirectory.Length -gt 1)
                 {
-                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory
                 }
 
                 $results = Repair-Credentials -results $results
@@ -3479,7 +3491,7 @@ function Read-SPSearchResultSource()
                         {
                             $results.Remove("ConnectionUrl")
                         }
-                        $results.Query = $resultSource.QueryTransform.QueryTemplate
+                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","```"")
                         $results.ProviderType = $provider.Name
                         if($resultSource.ConnectionUrlTemplate)
                         {
