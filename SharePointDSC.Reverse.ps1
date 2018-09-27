@@ -211,7 +211,7 @@ function Orchestrator
                 Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPManagedAccounts
 
-                if($SkipSitesAndWebs)
+                if(!$SkipSitesAndWebs)
                 {
                     Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPContentDatabase
