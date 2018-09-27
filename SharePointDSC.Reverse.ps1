@@ -108,6 +108,9 @@ function Orchestrator
     $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
     Save-Credentials $Global:spFarmAccount.UserName
 
+    # Add the Install Account for the User Profile Service Sync;
+    Save-Credentials "InstallAccount"
+
     $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
     $spFarm = Get-SPFarm
     $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
@@ -170,7 +173,6 @@ function Orchestrator
             else {
                 Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
             }
-           
 
             if($serverNumber -eq 1)
             {
@@ -2054,6 +2056,10 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
                     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
                     $results.SocialDBServer = "`$ConfigurationData.NonNodeData.SocialDBServer"
 
+                    if($results.PSDSCRunAsCredential)
+                    {
+                        $results.PSDSCRunAsCredential = "`$Credsinstallaccount"
+                    }
                     $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
