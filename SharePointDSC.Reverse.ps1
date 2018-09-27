@@ -35,10 +35,12 @@
 * Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
 * Updated to capture Web level Result Sources;
 * Improved and fixed the StandAlone extraction;
-* Changed Order of extraction between SPWebApplication and SPCOntentDatabase to have the DBs created first;
+* Changed order of extraction between SPWebApplication and SPContentDatabase to have the DBs created first;
 * Removed requirement to have a Global Search Center for Result Source Extraction;
 * Fixed Exclusion crawl rule issue where invalid parameters were passed;
 * Fixed an Issue with First Index Partition when extracting SPSearchTopology;
+* Changed order of extraction for SPSearchTopology and other Search components
+* Fixed issue with the Ensure value of the SSA level Result Sources;
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -332,6 +334,12 @@ function Orchestrator
                     Read-SPOfficeOnlineServerBinding
                 }
 
+                Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSearchTopology
+
+                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPSearchIndexPartition
+
                 if($Script:ExtractionModeValue -ge 2)
                 {
                     Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -350,11 +358,11 @@ function Orchestrator
                     Read-SPSearchResultSource
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchTopology
-
-                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchIndexPartition
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Managed Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchManagedProperty
+                }
 
                 Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPWordAutomationServiceApplication
@@ -3461,6 +3469,7 @@ function Read-SPSearchResultSource()
         {
             if($ssa)
             {
+                <# This section extracts the out-of-the
                 $serviceName = $ssa.DisplayName
                 Write-Host "Scanning Results Sources for Search Service Application [$i/$total] {$serviceName}"
                 $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
@@ -3493,6 +3502,7 @@ function Read-SPSearchResultSource()
                         }
                         $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","```"")
                         $results.ProviderType = $provider.Name
+                        $results.Ensure = "Present"
                         if($resultSource.ConnectionUrlTemplate)
                         {
                             $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
@@ -3581,7 +3591,7 @@ function Read-SPSearchCrawlRule()
             if($null -ne $ssa)
             {
                 $serviceName = $ssa.DisplayName
-                Write-Host "Scanning Cral Rules for Search Service Application [$i/$total] {$serviceName}"
+                Write-Host "Scanning Crawl Rules for Search Service Application [$i/$total] {$serviceName}"
 
                 $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
 
@@ -3614,6 +3624,55 @@ function Read-SPSearchCrawlRule()
         catch
         {
             $Script:ErrorLog += "[Search Crawl Rule]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
+    }
+}
+
+function Read-SPSearchManagedProperty()
+{
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchManagedProperty\MSFT_SPSearchManagedProperty.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
+
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
+    $i = 1
+    $total = $ssas.Length
+    foreach($ssa in $ssas)
+    {
+        try
+        {
+            if($null -ne $ssa)
+            {
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Managed Properties for Search Service Application [$i/$total] {$serviceName}"
+
+                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa
+
+                $j = 1
+                $total = $properties.Length
+                foreach($property in $properties)
+                {
+                    Write-Host "    -> Scanning Managed Property [$j/$total] {$($property.Name)}"
+
+                    $Script:dscConfigContent += "        SPSearchManagedProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.ServiceAppName = $serviceName
+                    $params.Name = $property.Name
+                    $params.PropertyType = $property.ManagedType
+                    $results = Get-TargetResource @params
+
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                    $j++
+                }
+            }
+            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Search Managed Property]" + $ssa.DisplayName + "`r`n"
             $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
