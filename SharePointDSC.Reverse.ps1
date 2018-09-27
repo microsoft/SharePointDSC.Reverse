@@ -3469,7 +3469,6 @@ function Read-SPSearchResultSource()
         {
             if($ssa)
             {
-                <# This section extracts the out-of-the
                 $serviceName = $ssa.DisplayName
                 Write-Host "Scanning Results Sources for Search Service Application [$i/$total] {$serviceName}"
                 $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
