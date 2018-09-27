@@ -3499,7 +3499,7 @@ function Read-SPSearchResultSource()
                         {
                             $results.Remove("ConnectionUrl")
                         }
-                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","```"")
+                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
                         $results.ProviderType = $provider.Name
                         $results.Ensure = "Present"
                         if($resultSource.ConnectionUrlTemplate)
