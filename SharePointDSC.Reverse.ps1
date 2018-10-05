@@ -346,6 +346,9 @@ function Orchestrator
                 {
                     Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPSearchCrawlRule
+
+                    Write-Host "["$spServer.Name"] Scanning Crawler Impact Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchCrawlerImpactRule
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
@@ -4906,6 +4909,844 @@ function Set-ObtainRequiredCredentials()
     $startPosition = $Script:dscConfigContent.IndexOf("<# Credentials #>") + 19
     $Script:dscConfigContent = $Script:dscConfigContent.Insert($startPosition, $credsContent)
 }
+
+#region GUI
+
+#region GUI Related Functions
+function SelectComponentsForMode($mode){
+    $components = $null
+    if($mode -eq 1)
+    {
+        $components = $liteComponents
+    }
+    elseif($mode -eq 2)
+    {
+        $components = $defaultComponents
+    }
+    foreach($panel in $form.Controls)
+    {
+        if($panel.GetType().ToString() -eq "System.Windows.Forms.Panel")
+        {
+            foreach($control in ([System.Windows.Forms.Panel]$panel).Controls){
+                try{
+                    if($mode -ne 3)
+                    {
+                        $control.Checked = $false
+                    }
+                    else
+                    {
+                        $control.Checked = $true
+                    }
+                }
+                catch{}
+            }
+        }
+    }
+    foreach($control in $components)
+    {
+        try{
+            $control.Checked = $true
+        }
+        catch{}
+    }
+}
+#endregion
+functon DisplayGUI()
+{
+    #region Global
+    $firstColumnLeft = 10
+    $secondColumnLeft = 500
+    $thirdColumnLeft = 1000
+    $topBannerHeight = 70
+    #endregion
+
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Autosize = $true
+
+    #region Information Architecture
+    $labelInformationArchitecture = New-Object System.Windows.Forms.Label
+    $labelInformationArchitecture.Top = $topBannerHeight
+    $labelInformationArchitecture.Text = "Information Architecture:"
+    $labelInformationArchitecture.AutoSize = $true
+    $labelInformationArchitecture.Font = [System.Drawing.Font]::new($labelInformationArchitecture.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelInformationArchitecture)
+
+    $panelInformationArchitecture = New-Object System.Windows.Forms.Panel
+    $panelInformationArchitecture.Top = 50 + $topBannerHeight
+    $panelInformationArchitecture.Left = $firstColumnLeft
+    $panelInformationArchitecture.AutoSize = $true
+    $panelInformationArchitecture.Width = 400
+    $panelInformationArchitecture.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckSiteCollection = New-Object System.Windows.Forms.CheckBox
+    $chckSiteCollection.AutoSize = $true;
+    $chckSiteCollection.Name = "chckSiteCollection"
+    $chckSiteCollection.Checked = $true
+    $chckSiteCollection.Text = "Site Collections (SPSite)"
+    $panelInformationArchitecture.Controls.Add($chckSiteCollection);
+
+    $chckContentDB = New-Object System.Windows.Forms.CheckBox
+    $chckContentDB.Top = 30
+    $chckContentDB.AutoSize = $true;
+    $chckContentDB.Name = "chckContentDB"
+    $chckContentDB.Checked = $true
+    $chckContentDB.Text = "Content Databases"
+    $panelInformationArchitecture.Controls.Add($chckContentDB);
+
+    $chckSPWeb = New-Object System.Windows.Forms.CheckBox
+    $chckSPWeb.Top = 60
+    $chckSPWeb.AutoSize = $true;
+    $chckSPWeb.Name = "chckSPWeb"
+    $chckSPWeb.Checked = $false
+    $chckSPWeb.Text = "Subsites (SPWeb)"
+    $panelInformationArchitecture.Controls.Add($chckSPWeb);
+
+    $chckQuotaTemplates = New-Object System.Windows.Forms.CheckBox
+    $chckQuotaTemplates.Top = 90
+    $chckQuotaTemplates.AutoSize = $true;
+    $chckQuotaTemplates.Name = "chckQuotaTemplates"
+    $chckQuotaTemplates.Checked = $true
+    $chckQuotaTemplates.Text = "Quota Templates"
+    $panelInformationArchitecture.Controls.Add($chckQuotaTemplates);
+
+    $form.Controls.Add($panelInformationArchitecture)
+    #endregion
+
+    #region Security
+    $labelSecurity = New-Object System.Windows.Forms.Label
+    $labelSecurity.Text = "Security:"
+    $labelSecurity.AutoSize = $true
+    $labelSecurity.Top = 190 + $topBannerHeight
+    $labelSecurity.Left = $firstColumnLeft
+    $labelSecurity.Font = [System.Drawing.Font]::new($labelSecurity.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSecurity)
+
+    $panelSecurity = New-Object System.Windows.Forms.Panel
+    $panelSecurity.Top = 240 + $topBannerHeight
+    $panelSecurity.Left = $firstColumnLeft
+    $panelSecurity.AutoSize = $true
+    $panelSecurity.Width = 400
+    $panelSecurity.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckManagedAccount = New-Object System.Windows.Forms.CheckBox
+    $chckManagedAccount.AutoSize = $true;
+    $chckManagedAccount.Name = "chckManagedAccount"
+    $chckManagedAccount.Checked = $true
+    $chckManagedAccount.Text = "Managed Accounts"
+    $panelSecurity.Controls.Add($chckManagedAccount);
+
+    $chckFarmAdmin = New-Object System.Windows.Forms.CheckBox
+    $chckFarmAdmin.Top = 30
+    $chckFarmAdmin.AutoSize = $true;
+    $chckFarmAdmin.Name = "chckFarmAdmin"
+    $chckFarmAdmin.Checked = $true
+    $chckFarmAdmin.Text = "Farm Administrators"
+    $panelSecurity.Controls.Add($chckFarmAdmin);
+
+    $chckTrustedIdentity = New-Object System.Windows.Forms.CheckBox
+    $chckTrustedIdentity.Top = 60
+    $chckTrustedIdentity.AutoSize = $true;
+    $chckTrustedIdentity.Name = "chckTrustedIdentity"
+    $chckTrustedIdentity.Checked = $true
+    $chckTrustedIdentity.Text = "Trusted Identity Token Issuer"
+    $panelSecurity.Controls.Add($chckTrustedIdentity);
+
+    $chckRemoteTrust = New-Object System.Windows.Forms.CheckBox
+    $chckRemoteTrust.Top = 90
+    $chckRemoteTrust.AutoSize = $true;
+    $chckRemoteTrust.Name = "chckRemoteTrust"
+    $chckRemoteTrust.Checked = $true
+    $chckRemoteTrust.Text = "Remote Farm Trust"
+    $panelSecurity.Controls.Add($chckRemoteTrust);
+
+    $chckPasswordChange = New-Object System.Windows.Forms.CheckBox
+    $chckPasswordChange.Top = 120
+    $chckPasswordChange.AutoSize = $true;
+    $chckPasswordChange.Name = "chckPasswordChange"
+    $chckPasswordChange.Checked = $true
+    $chckPasswordChange.Text = "Password Change Settings"
+    $panelSecurity.Controls.Add($chckPasswordChange);
+
+    $chckSASecurity = New-Object System.Windows.Forms.CheckBox
+    $chckSASecurity.Top = 150
+    $chckSASecurity.AutoSize = $true;
+    $chckSASecurity.Name = "chckSASecurity"
+    $chckSASecurity.Checked = $true
+    $chckSASecurity.Text = "Service Applications Security"
+    $panelSecurity.Controls.Add($chckSASecurity);
+
+    $form.Controls.Add($panelSecurity)
+    #endregion
+
+    #region Service Applications
+    $labelSA = New-Object System.Windows.Forms.Label
+    $labelSA.Text = "Service Applications:"
+    $labelSA.AutoSize = $true
+    $labelSA.Top = 450 + $topBannerHeight
+    $labelSA.Left = $firstColumnLeft
+    $labelSA.Font = [System.Drawing.Font]::new($labelSA.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSA)
+
+    $panelSA = New-Object System.Windows.Forms.Panel
+    $panelSA.Top = 500 + $topBannerHeight
+    $panelSA.Left = $firstColumnLeft
+    $panelSA.AutoSize = $true
+    $panelSA.Width = 400
+    $panelSA.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckSAUsage = New-Object System.Windows.Forms.CheckBox
+    $chckSAUsage.AutoSize = $true;
+    $chckSAUsage.Top = 0;
+    $chckSAUsage.Name = "chckSAUsage"
+    $chckSAUsage.Checked = $true
+    $chckSAUsage.Text = "Usage Service Application"
+    $panelSA.Controls.Add($chckSAUsage);
+
+    $chckSAState = New-Object System.Windows.Forms.CheckBox
+    $chckSAState.Top = 30
+    $chckSAState.AutoSize = $true;
+    $chckSAState.Name = "chckSAState"
+    $chckSAState.Checked = $true
+    $chckSAState.Text = "State Service Application"
+    $panelSA.Controls.Add($chckSAState);
+
+    $chckSAMachine = New-Object System.Windows.Forms.CheckBox
+    $chckSAMachine.Top = 60
+    $chckSAMachine.AutoSize = $true;
+    $chckSAMachine.Name = "chckSAMachine"
+    $chckSAMachine.Checked = $true
+    $chckSAMachine.Text = "Machine Translation"
+    $panelSA.Controls.Add($chckSAMachine);
+
+    $chckSASecureStore = New-Object System.Windows.Forms.CheckBox
+    $chckSASecureStore.Top = 90
+    $chckSASecureStore.AutoSize = $true;
+    $chckSASecureStore.Name = "chckSASecureStore"
+    $chckSASecureStore.Checked = $true
+    $chckSASecureStore.Text = "Secure Store"
+    $panelSA.Controls.Add($chckSASecureStore);
+
+    $chckSABCS = New-Object System.Windows.Forms.CheckBox
+    $chckSABCS.Top = 120
+    $chckSABCS.AutoSize = $true;
+    $chckSABCS.Name = "chckSABCS"
+    $chckSABCS.Checked = $true
+    $chckSABCS.Text = "Business Connectivity Services"
+    $panelSA.Controls.Add($chckSABCS);
+
+    $chckSAMMS = New-Object System.Windows.Forms.CheckBox
+    $chckSAMMS.Top = 150
+    $chckSAMMS.AutoSize = $true;
+    $chckSAMMS.Name = "chckSAMMS"
+    $chckSAMMS.Checked = $true
+    $chckSAMMS.Text = "Managed Metadata"
+    $panelSA.Controls.Add($chckSAMMS);
+
+    $chckSAAccess2010 = New-Object System.Windows.Forms.CheckBox
+    $chckSAAccess2010.Top = 180
+    $chckSAAccess2010.AutoSize = $true;
+    $chckSAAccess2010.Name = "chckSAAccess2010"
+    $chckSAAccess2010.Checked = $true
+    $chckSAAccess2010.Text = "Access Services 2010"
+    $panelSA.Controls.Add($chckSAAccess2010);
+
+    $chckSAAccess = New-Object System.Windows.Forms.CheckBox
+    $chckSAAccess.Top = 210
+    $chckSAAccess.AutoSize = $true;
+    $chckSAAccess.Name = "chckSAAccess"
+    $chckSAAccess.Checked = $true
+    $chckSAAccess.Text = "Access Services"
+    $panelSA.Controls.Add($chckSAAccess);
+
+    $chckSAExcel = New-Object System.Windows.Forms.CheckBox
+    $chckSAExcel.Top = 240
+    $chckSAExcel.AutoSize = $true;
+    $chckSAExcel.Name = "chckSAExcel"
+    $chckSAExcel.Checked = $true
+    $chckSAExcel.Text = "Excel Services"
+    $panelSA.Controls.Add($chckSAExcel);
+
+    $chckSAWord = New-Object System.Windows.Forms.CheckBox
+    $chckSAWord.Top = 270
+    $chckSAWord.AutoSize = $true;
+    $chckSAWord.Name = "chckSAWord"
+    $chckSAWord.Checked = $true
+    $chckSAWord.Text = "Word Automation"
+    $panelSA.Controls.Add($chckSAWord);
+
+    $chckSAPerformance = New-Object System.Windows.Forms.CheckBox
+    $chckSAPerformance.Top = 300
+    $chckSAPerformance.AutoSize = $true;
+    $chckSAPerformance.Name = "chckSAWord"
+    $chckSAPerformance.Checked = $true
+    $chckSAPerformance.Text = "PerformancePoint"
+    $panelSA.Controls.Add($chckSAPerformance);
+
+    $chckSAPublish = New-Object System.Windows.Forms.CheckBox
+    $chckSAPublish.Top = 330
+    $chckSAPublish.AutoSize = $true;
+    $chckSAPublish.Name = "chckSAPublish"
+    $chckSAPublish.Checked = $true
+    $chckSAPublish.Text = "Publish"
+    $panelSA.Controls.Add($chckSAPublish);
+
+    $chckSAWork = New-Object System.Windows.Forms.CheckBox
+    $chckSAWork.Top = 360
+    $chckSAWork.AutoSize = $true;
+    $chckSAWork.Name = "chckSAWork"
+    $chckSAWork.Checked = $true
+    $chckSAWork.Text = "Work Management"
+    $panelSA.Controls.Add($chckSAWork);
+
+    $chckSAVisio = New-Object System.Windows.Forms.CheckBox
+    $chckSAVisio.Top = 390
+    $chckSAVisio.AutoSize = $true;
+    $chckSAVisio.Name = "chckSAVisio"
+    $chckSAVisio.Checked = $true
+    $chckSAVisio.Text = "Visio Graphics"
+    $panelSA.Controls.Add($chckSAVisio);
+
+    $chckSAAppMan= New-Object System.Windows.Forms.CheckBox
+    $chckSAAppMan.Top = 420
+    $chckSAAppMan.AutoSize = $true;
+    $chckSAAppMan.Name = "chckSAAppMan"
+    $chckSAAppMan.Checked = $true
+    $chckSAAppMan.Text = "App Management"
+    $panelSA.Controls.Add($chckSAAppMan);
+
+    $chckSASub = New-Object System.Windows.Forms.CheckBox
+    $chckSASub.Top = 450
+    $chckSASub.AutoSize = $true;
+    $chckSASub.Name = "chckSASub"
+    $chckSASub.Checked = $true
+    $chckSASub.Text = "Subscription settings"
+    $panelSA.Controls.Add($chckSASub);
+
+    $form.Controls.Add($panelSA)
+    #endregion
+
+    #region Search
+    $labelSearch = New-Object System.Windows.Forms.Label
+    $labelSearch.Top = $topBannerHeight
+    $labelSearch.Text = "Search:"
+    $labelSearch.AutoSize = $true
+    $labelSearch.Left = $secondColumnLeft
+    $labelSearch.Font = [System.Drawing.Font]::new($labelSearch.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSearch)
+
+    $panelSearch = New-Object System.Windows.Forms.Panel
+    $panelSearch.Top = 50 + $topBannerHeight
+    $panelSearch.Left = $secondColumnLeft
+    $panelSearch.AutoSize = $true
+    $panelSearch.Width = 400
+    $panelSearch.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckSearchSA = New-Object System.Windows.Forms.CheckBox
+    $chckSearchSA.AutoSize = $true;
+    $chckSearchSA.Name = "chckSearchSA"
+    $chckSearchSA.Checked = $true
+    $chckSearchSA.Text = "Search Service Applications"
+    $panelSearch.Controls.Add($chckSearchSA);
+
+    $chckSearchTopo = New-Object System.Windows.Forms.CheckBox
+    $chckSearchTopo.Top = 30
+    $chckSearchTopo.AutoSize = $true
+    $chckSearchTopo.Name = "chckSearchTopo"
+    $chckSearchTopo.Checked = $true
+    $chckSearchTopo.Text = "Topology"
+    $panelSearch.Controls.Add($chckSearchTopo);
+
+    $chckManagedProp = New-Object System.Windows.Forms.CheckBox
+    $chckManagedProp.Top = 60
+    $chckManagedProp.AutoSize = $true;
+    $chckManagedProp.Name = "chckManagedProp"
+    $chckManagedProp.Checked = $false
+    $chckManagedProp.Text = "Managed Properties"
+    $panelSearch.Controls.Add($chckManagedProp);
+
+    $chckSearchIndexPart = New-Object System.Windows.Forms.CheckBox
+    $chckSearchIndexPart.Top = 90
+    $chckSearchIndexPart.AutoSize = $true;
+    $chckSearchIndexPart.Name = "chckSearchIndexPart"
+    $chckSearchIndexPart.Checked = $true
+    $chckSearchIndexPart.Text = "Index Partitions"
+    $panelSearch.Controls.Add($chckSearchIndexPart);
+
+    $chckSearchCrawlRule = New-Object System.Windows.Forms.CheckBox
+    $chckSearchCrawlRule.Top = 120
+    $chckSearchCrawlRule.AutoSize = $true;
+    $chckSearchCrawlRule.Name = "chckSearchCrawlRule"
+    $chckSearchCrawlRule.Checked = $true
+    $chckSearchCrawlRule.Text = "Crawl Rules"
+    $panelSearch.Controls.Add($chckSearchCrawlRule);
+
+    $chckSearchFileTypes = New-Object System.Windows.Forms.CheckBox
+    $chckSearchFileTypes.Top = 150
+    $chckSearchFileTypes.AutoSize = $true;
+    $chckSearchFileTypes.Name = "chckSearchFileTypes"
+    $chckSearchFileTypes.Checked = $false
+    $chckSearchFileTypes.Text = "File Types"
+    $panelSearch.Controls.Add($chckSearchFileTypes);
+
+    $chckSearchResultSources = New-Object System.Windows.Forms.CheckBox
+    $chckSearchResultSources.Top = 180
+    $chckSearchResultSources.AutoSize = $true;
+    $chckSearchResultSources.Name = "chckSearchResultSources"
+    $chckSearchResultSources.Checked = $true
+    $chckSearchResultSources.Text = "Result Sources"
+    $panelSearch.Controls.Add($chckSearchResultSources);
+
+    $chckSearchCrawlerImpact = New-Object System.Windows.Forms.CheckBox
+    $chckSearchCrawlerImpact.Top = 210
+    $chckSearchCrawlerImpact.AutoSize = $true;
+    $chckSearchCrawlerImpact.Name = "chckSearchCrawlerImpact"
+    $chckSearchCrawlerImpact.Checked = $true
+    $chckSearchCrawlerImpact.Text = "Crawler Impact Rules"
+    $panelSearch.Controls.Add($chckSearchCrawlerImpact);
+
+    $chckSearchContentSource = New-Object System.Windows.Forms.CheckBox
+    $chckSearchContentSource.Top = 240
+    $chckSearchContentSource.AutoSize = $true;
+    $chckSearchContentSource.Name = "chckSearchContentSource"
+    $chckSearchContentSource.Checked = $true
+    $chckSearchContentSource.Text = "Content Sources"
+    $panelSearch.Controls.Add($chckSearchContentSource);
+
+    $form.Controls.Add($panelSearch)
+    #endregion
+
+    #region Web Applications
+    $labelWebApplications = New-Object System.Windows.Forms.Label
+    $labelWebApplications.Text = "Web Applications:"
+    $labelWebApplications.AutoSize = $true
+    $labelWebApplications.Top = 340 + $topBannerHeight
+    $labelWebApplications.Left = $secondColumnLeft
+    $labelWebApplications.Font = [System.Drawing.Font]::new($labelWebApplications.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelWebApplications)
+
+    $panelWebApp = New-Object System.Windows.Forms.Panel
+    $panelWebApp.Top = 400 + $topBannerHeight
+    $panelWebApp.Left = $secondColumnLeft
+    $panelWebApp.AutoSize = $true
+    $panelWebApp.Width = 400
+    $panelWebApp.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckWebApp = New-Object System.Windows.Forms.CheckBox
+    $chckWebApp.AutoSize = $true;
+    $chckWebApp.Name = "chckWebApp"
+    $chckWebApp.Checked = $true
+    $chckWebApp.Text = "Web Applications"
+    $panelWebApp.Controls.Add($chckWebApp);
+
+    $chckWebAppPolicy = New-Object System.Windows.Forms.CheckBox
+    $chckWebAppPolicy.Top = 30
+    $chckWebAppPolicy.AutoSize = $true;
+    $chckWebAppPolicy.Name = "chckWebAppPolicy"
+    $chckWebAppPolicy.Checked = $true
+    $chckWebAppPolicy.Text = "Policies"
+    $panelWebApp.Controls.Add($chckWebAppPolicy);
+
+    $chckWebAppPerm = New-Object System.Windows.Forms.CheckBox
+    $chckWebAppPerm.Top = 60
+    $chckWebAppPerm.AutoSize = $true
+    $chckWebAppPerm.Name = "chckWebAppPerm"
+    $chckWebAppPerm.Checked = $true
+    $chckWebAppPerm.Text = "Permissions"
+    $panelWebApp.Controls.Add($chckWebAppPerm);
+
+    $chckWAWorkflow = New-Object System.Windows.Forms.CheckBox
+    $chckWAWorkflow.Top = 90
+    $chckWAWorkflow.AutoSize = $true;
+    $chckWAWorkflow.Name = "chckWAWorkflow"
+    $chckWAWorkflow.Checked = $true
+    $chckWAWorkflow.Text = "Workflow Settings"
+    $panelWebApp.Controls.Add($chckWAWorkflow);
+
+    $chckWAThrottling = New-Object System.Windows.Forms.CheckBox
+    $chckWAThrottling.Top = 120
+    $chckWAThrottling.AutoSize = $true;
+    $chckWAThrottling.Name = "chckWAThrottling"
+    $chckWAThrottling.Checked = $true
+    $chckWAThrottling.Text = "Throttling Settings"
+    $panelWebApp.Controls.Add($chckWAThrottling);
+
+    $chckWADeletion = New-Object System.Windows.Forms.CheckBox
+    $chckWADeletion.Top = 150
+    $chckWADeletion.AutoSize = $true;
+    $chckWADeletion.Name = "chckWADeletion"
+    $chckWADeletion.Checked = $true
+    $chckWADeletion.Text = "Site Use and Deletion"
+    $panelWebApp.Controls.Add($chckWADeletion);
+
+    $chckWAProxyGroup = New-Object System.Windows.Forms.CheckBox
+    $chckWAProxyGroup.Top = 180
+    $chckWAProxyGroup.AutoSize = $true;
+    $chckWAProxyGroup.Name = "chckWAProxyGroup"
+    $chckWAProxyGroup.Checked = $true
+    $chckWAProxyGroup.Text = "Proxy Groups"
+    $panelWebApp.Controls.Add($chckWAProxyGroup);
+
+    $chckWAExtension = New-Object System.Windows.Forms.CheckBox
+    $chckWAExtension.Top = 210
+    $chckWAExtension.AutoSize = $true;
+    $chckWAExtension.Name = "chckWAExtension"
+    $chckWAExtension.Checked = $true
+    $chckWAExtension.Text = "Extensions"
+    $panelWebApp.Controls.Add($chckWAExtension);
+
+    $chckWAAppDomain = New-Object System.Windows.Forms.CheckBox
+    $chckWAAppDomain.Top = 240
+    $chckWAAppDomain.AutoSize = $true;
+    $chckWAAppDomain.Name = "chckWAAppDomain"
+    $chckWAAppDomain.Checked = $true
+    $chckWAAppDomain.Text = "App Domain"
+    $panelWebApp.Controls.Add($chckWAAppDomain);
+
+    $chckWAGeneral = New-Object System.Windows.Forms.CheckBox
+    $chckWAGeneral.Top = 270
+    $chckWAGeneral.AutoSize = $true;
+    $chckWAGeneral.Name = "chckWAGeneral"
+    $chckWAGeneral.Checked = $true
+    $chckWAGeneral.Text = "General Settings"
+    $panelWebApp.Controls.Add($chckWAGeneral);
+
+    $chckWABlockedFiles = New-Object System.Windows.Forms.CheckBox
+    $chckWABlockedFiles.Top = 300
+    $chckWABlockedFiles.AutoSize = $true;
+    $chckWABlockedFiles.Name = "chckWABlockedFiles"
+    $chckWABlockedFiles.Checked = $true
+    $chckWABlockedFiles.Text = "Blocked File Types"
+    $panelWebApp.Controls.Add($chckWABlockedFiles);
+
+    $form.Controls.Add($panelWebApp)
+    #endregion
+
+    #region Customization
+    $labelCustomization = New-Object System.Windows.Forms.Label
+    $labelCustomization.Text = "Customization:"
+    $labelCustomization.AutoSize = $true
+    $labelCustomization.Top = 760 + $topBannerHeight
+    $labelCustomization.Left = $secondColumnLeft
+    $labelCustomization.Font = [System.Drawing.Font]::new($labelCustomization.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelCustomization)
+
+    $panelCustomization = New-Object System.Windows.Forms.Panel
+    $panelCustomization.Top = 830 + $topBannerHeight
+    $panelCustomization.Left = $secondColumnLeft
+    $panelCustomization.AutoSize = $true
+    $panelCustomization.Width = 400
+    $panelCustomization.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckFarmSolution = New-Object System.Windows.Forms.CheckBox
+    $chckFarmSolution.AutoSize = $true;
+    $chckFarmSolution.Name = "chckFarmSolution"
+    $chckFarmSolution.Checked = $true
+    $chckFarmSolution.Text = "Farm Solutions"
+    $panelCustomization.Controls.Add($chckFarmSolution);
+
+    $chckAppDomain = New-Object System.Windows.Forms.CheckBox
+    $chckAppDomain.Top = 30
+    $chckAppDomain.AutoSize = $true;
+    $chckAppDomain.Name = "chckAppDomain"
+    $chckAppDomain.Checked = $true
+    $chckAppDomain.Text = "App Domain"
+    $panelCustomization.Controls.Add($chckAppDomain);
+
+    $chckAppStore = New-Object System.Windows.Forms.CheckBox
+    $chckAppStore.Top = 60
+    $chckAppStore.AutoSize = $true
+    $chckAppStore.Name = "chckAppStore"
+    $chckAppStore.Checked = $true
+    $chckAppStore.Text = "App Store Settings"
+    $panelCustomization.Controls.Add($chckAppStore);
+
+    $chckAppCatalog = New-Object System.Windows.Forms.CheckBox
+    $chckAppCatalog.Top = 90
+    $chckAppCatalog.AutoSize = $true;
+    $chckAppCatalog.Name = "chckAppCatalog"
+    $chckAppCatalog.Checked = $true
+    $chckAppCatalog.Text = "App Catalog"
+    $panelCustomization.Controls.Add($chckAppCatalog);
+
+    $form.Controls.Add($panelCustomization)
+    #endregion
+
+    #region Configuration
+    $labelConfiguration = New-Object System.Windows.Forms.Label
+    $labelConfiguration.Text = "Configuration:"
+    $labelConfiguration.AutoSize = $true
+    $labelConfiguration.Top = 220 + $topBannerHeight
+    $labelConfiguration.Left = $thirdColumnLeft
+    $labelConfiguration.Font = [System.Drawing.Font]::new($labelConfiguration.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelConfiguration)
+
+    $panelConfig = New-Object System.Windows.Forms.Panel
+    $panelConfig.Top = 280 + $topBannerHeight
+    $panelConfig.Left = $thirdColumnLeft
+    $panelConfig.AutoSize = $true
+    $panelConfig.Width = 400
+    $panelConfig.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckFarmConfig = New-Object System.Windows.Forms.CheckBox
+    $chckFarmConfig.AutoSize = $true;
+    $chckFarmConfig.Name = "chckFarmConfig"
+    $chckFarmConfig.Checked = $true
+    $chckFarmConfig.Text = "Farm Configuration"
+    $panelConfig.Controls.Add($chckFarmConfig);
+
+    $chckServiceAppPool = New-Object System.Windows.Forms.CheckBox
+    $chckServiceAppPool.Top = 30
+    $chckServiceAppPool.AutoSize = $true;
+    $chckServiceAppPool.Name = "chckServiceAppPool"
+    $chckServiceAppPool.Checked = $true
+    $chckServiceAppPool.Text = "Service Application Pools"
+    $panelConfig.Controls.Add($chckServiceAppPool);
+
+    $chckDiagLogging = New-Object System.Windows.Forms.CheckBox
+    $chckDiagLogging.Top = 60
+    $chckDiagLogging.AutoSize = $true;
+    $chckDiagLogging.Name = "chckDiagLogging"
+    $chckDiagLogging.Checked = $true
+    $chckDiagLogging.Text = "Diagnostic Logging"
+    $panelConfig.Controls.Add($chckDiagLogging);
+
+    $chckCacheAccounts = New-Object System.Windows.Forms.CheckBox
+    $chckCacheAccounts.Top = 90
+    $chckCacheAccounts.AutoSize = $true;
+    $chckCacheAccounts.Name = "chckCacheAccounts"
+    $chckCacheAccounts.Checked = $true
+    $chckCacheAccounts.Text = "Cache Accounts"
+    $panelConfig.Controls.Add($chckCacheAccounts);
+
+    $chckAntivirus = New-Object System.Windows.Forms.CheckBox
+    $chckAntivirus.Top = 120
+    $chckAntivirus.AutoSize = $true;
+    $chckAntivirus.Name = "chckAntivirus"
+    $chckAntivirus.Checked = $true
+    $chckAntivirus.Text = "Antivirus Settings"
+    $panelConfig.Controls.Add($chckAntivirus);
+
+    $chckBlobCache = New-Object System.Windows.Forms.CheckBox
+    $chckBlobCache.Top = 150
+    $chckBlobCache.AutoSize = $true;
+    $chckBlobCache.Name = "chckBlobCache"
+    $chckBlobCache.Checked = $true
+    $chckBlobCache.Text = "Blob Cache Settings"
+    $panelConfig.Controls.Add($chckBlobCache);
+
+    $chckHealth = New-Object System.Windows.Forms.CheckBox
+    $chckHealth.Top = 180
+    $chckHealth.AutoSize = $true;
+    $chckHealth.Name = "chckHealth"
+    $chckHealth.Checked = $true
+    $chckHealth.Text = "Health Analyzer Rule States"
+    $panelConfig.Controls.Add($chckHealth);
+
+    $chckIRM = New-Object System.Windows.Forms.CheckBox
+    $chckIRM.Top = 210
+    $chckIRM.AutoSize = $true;
+    $chckIRM.Name = "chckIRM"
+    $chckIRM.Checked = $true
+    $chckIRM.Text = "Information Rights Management Settings"
+    $panelConfig.Controls.Add($chckIRM);
+
+    $chckOOS = New-Object System.Windows.Forms.CheckBox
+    $chckOOS.Top = 240
+    $chckOOS.AutoSize = $true;
+    $chckOOS.Name = "chckOOS"
+    $chckOOS.Checked = $false
+    $chckOOS.Text = "Office Online Server Bindings"
+    $panelConfig.Controls.Add($chckOOS);
+
+    $chckTimerJob = New-Object System.Windows.Forms.CheckBox
+    $chckTimerJob.Top = 270
+    $chckTimerJob.AutoSize = $true;
+    $chckTimerJob.Name = "chckTimerJob"
+    $chckTimerJob.Checked = $false
+    $chckTimerJob.Text = "Timer Job States"
+    $panelConfig.Controls.Add($chckTimerJob);
+
+    $chckFarmPropBag = New-Object System.Windows.Forms.CheckBox
+    $chckFarmPropBag.Top = 300
+    $chckFarmPropBag.AutoSize = $true;
+    $chckFarmPropBag.Name = "chckFarmPropBag"
+    $chckFarmPropBag.Checked = $true
+    $chckFarmPropBag.Text = "Farm Property Bag"
+    $panelConfig.Controls.Add($chckFarmPropBag);
+
+    $chckServiceInstance = New-Object System.Windows.Forms.CheckBox
+    $chckServiceInstance.Top = 330
+    $chckServiceInstance.AutoSize = $true;
+    $chckServiceInstance.Name = "chckServiceInstance"
+    $chckServiceInstance.Checked = $true
+    $chckServiceInstance.Text = "Service Instances"
+    $panelConfig.Controls.Add($chckServiceInstance);
+
+    $chckAAM = New-Object System.Windows.Forms.CheckBox
+    $chckAAM.Top = 360
+    $chckAAM.AutoSize = $true;
+    $chckAAM.Name = "chckAAM"
+    $chckAAM.Checked = $true
+    $chckAAM.Text = "Alternate Access Mappings"
+    $panelConfig.Controls.Add($chckAAM);
+
+    $chckManagedPaths = New-Object System.Windows.Forms.CheckBox
+    $chckManagedPaths.Top = 390
+    $chckManagedPaths.AutoSize = $true;
+    $chckManagedPaths.Name = "chckManagedPaths"
+    $chckManagedPaths.Checked = $true
+    $chckManagedPaths.Text = "Managed Paths"
+    $panelConfig.Controls.Add($chckManagedPaths);
+
+    $chckFeature = New-Object System.Windows.Forms.CheckBox
+    $chckFeature.Top = 420
+    $chckFeature.AutoSize = $true;
+    $chckFeature.Name = "chckFeature"
+    $chckFeature.Checked = $false
+    $chckFeature.Text = "Features"
+    $panelConfig.Controls.Add($chckFeature);
+
+    $chckSessionState= New-Object System.Windows.Forms.CheckBox
+    $chckSessionState.Top = 450
+    $chckSessionState.AutoSize = $true;
+    $chckSessionState.Name = "chckSessionState"
+    $chckSessionState.Checked = $true
+    $chckSessionState.Text = "Session State Service"
+    $panelConfig.Controls.Add($chckSessionState);
+
+    $chckDatabaseAAG= New-Object System.Windows.Forms.CheckBox
+    $chckDatabaseAAG.Top = 480
+    $chckDatabaseAAG.AutoSize = $true;
+    $chckDatabaseAAG.Name = "chckDatabaseAAG"
+    $chckDatabaseAAG.Checked = $false
+    $chckDatabaseAAG.Text = "SQL Always On Availability Groups"
+    $panelConfig.Controls.Add($chckDatabaseAAG);
+
+    $chckDistributedCache= New-Object System.Windows.Forms.CheckBox
+    $chckDistributedCache.Top = 510
+    $chckDistributedCache.AutoSize = $true;
+    $chckDistributedCache.Name = "chckDistributedCache"
+    $chckDistributedCache.Checked = $false
+    $chckDistributedCache.Text = "Distributed Cache Service"
+    $panelConfig.Controls.Add($chckDistributedCache);
+
+    $chckAlternateUrl = New-Object System.Windows.Forms.CheckBox
+    $chckAlternateUrl.Top = 540
+    $chckAlternateUrl.AutoSize = $true;
+    $chckAlternateUrl.Name = "chckAlternateUrl"
+    $chckAlternateUrl.Checked = $true
+    $chckAlternateUrl.Text = "Alternate URL"
+    $panelConfig.Controls.Add($chckAlternateUrl);
+
+    $chckOutgoingEmail = New-Object System.Windows.Forms.CheckBox
+    $chckOutgoingEmail.Top = 570
+    $chckOutgoingEmail.AutoSize = $true;
+    $chckOutgoingEmail.Name = "chckOutgoingEmail"
+    $chckOutgoingEmail.Checked = $true
+    $chckOutgoingEmail.Text = "Outgoing Email Settings"
+    $panelConfig.Controls.Add($chckOutgoingEmail);
+
+    $form.Controls.Add($panelConfig)
+    #endregion
+
+    #region User Profile Service
+    $lblUPS = New-Object System.Windows.Forms.Label
+    $lblUPS.Top = $topBannerHeight
+    $lblUPS.Text = "User Profile:"
+    $lblUPS.AutoSize = $true
+    $lblUPS.Left = $thirdColumnLeft
+    $lblUPS.Font = [System.Drawing.Font]::new($lblUPS.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblUPS)
+
+    $panelUPS = New-Object System.Windows.Forms.Panel
+    $panelUPS.Top = 50 + $topBannerHeight
+    $panelUPS.Left = $thirdColumnLeft
+    $panelUPS.AutoSize = $true
+    $panelUPS.Width = 400
+    $panelUPS.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckUPSA = New-Object System.Windows.Forms.CheckBox
+    $chckUPSA.AutoSize = $true;
+    $chckUPSA.Name = "chckUPSA"
+    $chckUPSA.Checked = $true
+    $chckUPSA.Text = "User Profile Service Applications"
+    $panelUPS.Controls.Add($chckUPSA);
+
+    $chckUPSSection = New-Object System.Windows.Forms.CheckBox
+    $chckUPSSection.Top = 30
+    $chckUPSSection.AutoSize = $true
+    $chckUPSSection.Name = "chckUPSSection"
+    $chckUPSSection.Checked = $false
+    $chckUPSSection.Text = "Profile Sections"
+    $panelUPS.Controls.Add($chckUPSSection);
+
+    $chckUPSProp = New-Object System.Windows.Forms.CheckBox
+    $chckUPSProp.Top = 60
+    $chckUPSProp.AutoSize = $true;
+    $chckUPSProp.Name = "chckManagedProp"
+    $chckUPSProp.Checked = $false
+    $chckUPSProp.Text = "Profile Properties"
+    $panelUPS.Controls.Add($chckUPSProp);
+
+    $chckUPSPermissions = New-Object System.Windows.Forms.CheckBox
+    $chckUPSPermissions.Top = 90
+    $chckUPSPermissions.AutoSize = $true;
+    $chckUPSPermissions.Name = "chckUPSPermissions"
+    $chckUPSPermissions.Checked = $true
+    $chckUPSPermissions.Text = "Service Application Permissions"
+    $panelUPS.Controls.Add($chckUPSPermissions);
+
+    $chckUPSSync = New-Object System.Windows.Forms.CheckBox
+    $chckUPSSync.Top = 120
+    $chckUPSSync.AutoSize = $true;
+    $chckUPSSync.Name = "chckUPSSync"
+    $chckUPSSync.Checked = $true
+    $chckUPSSync.Text = "Synchronization Connections"
+    $panelUPS.Controls.Add($chckUPSSync);
+
+    $form.Controls.Add($panelUPS)
+    #endregion
+
+    #region Extraction Modes
+    $liteComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckSearchIndexPart, $chckWAAppDomain, $chckSessionState, $chckSAUsage)
+    $defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckDatabaseAAG, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchFileTypes, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSProp, $chckUPSSection, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
+    #endregion
+
+
+
+    #region Top Menu
+    $panelMenu = New-Object System.Windows.Forms.Panel
+    $panelMenu.Height = $topBannerHeight
+    $panelMenu.Width = $form.width
+    $panelMenu.BackColor = [System.Drawing.Color]::Silver
+
+    $btnLite = New-Object System.Windows.Forms.Button
+    $btnLite.AutoSize = $true
+    $btnLite.Text = "Lite"
+    $btnLite.Add_Click({SelectComponentsForMode(1)})
+    $panelMenu.Controls.Add($btnLite);
+
+    $btnDefault = New-Object System.Windows.Forms.Button
+    $btnDefault.AutoSize = $true
+    $btnDefault.Left = 80
+    $btnDefault.Text = "Default"
+    $btnDefault.Add_Click({SelectComponentsForMode(2)})
+    $panelMenu.Controls.Add($btnDefault);
+
+    $btnFull = New-Object System.Windows.Forms.Button
+    $btnFull.AutoSize = $true
+    $btnFull.Left = 180
+    $btnFull.Text = "Full"
+    $btnFull.Add_Click({SelectComponentsForMode(3)})
+    $panelMenu.Controls.Add($btnFull);
+
+    $form.Controls.Add($panelMenu);
+    #endregion
+
+    $form.ShowDialog()
+}
+#endregion
 
 Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
 $sharePointSnapin = Get-PSSnapin | Where-Object{$_.Name -eq "Microsoft.SharePoint.PowerShell"}
