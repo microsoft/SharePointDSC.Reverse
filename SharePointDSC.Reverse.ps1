@@ -5762,6 +5762,8 @@ function DisplayGUI()
     $btnClear.AutoSize = $true
     $btnClear.Top = 20
     $btnClear.Left = 700
+    $btnClear.BackColor = [System.Drawing.Color]::IndianRed
+    $btnClear.ForeColor = [System.Drawing.Color]::White
     $btnClear.Text = "Unselect All"
     $btnClear.Add_Click({SelectComponentsForMode(0)})
     $panelMenu.Controls.Add($btnClear);
@@ -5771,8 +5773,9 @@ function DisplayGUI()
     $btnExtract.Top = 20
     $btnExtract.Left = 1200
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
+    $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
-    $btnExtract.Add_Click({SelectComponentsForMode(0)})
+    $btnExtract.Add_Click()
     $panelMenu.Controls.Add($btnExtract);
 
     $form.Controls.Add($panelMenu);
