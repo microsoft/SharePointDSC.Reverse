@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.2.2
+.VERSION 2.6.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,31 +16,8 @@
 
 .RELEASENOTES
 
-* Updated Requirement for SharePointDSC 2.5.0.0;
-* Fixed issue with Central Admin Invalid Port;
-* Filtered out invalid usernames (e.g. true) from Web App Policies;
-* Added support for the SPSiteUrl Resource;
-* Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
-* Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
-* Fixed issue with Other languages than english when extracting configuration database;
-* Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
-* Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
-* Removed the invalid Ensure parameter from being extracted from SPUserProfileSyncConnection;
-* Fixed an issue with SPWebAppPolicy not properly converting Members CIMInstance;
-* Removed the requirement to provide credentials for each service application;
-* Fixes for French (and multilingual) Service Applications;
-* Web App Policies now using strings for unmanaged usernames;
-* Fixed issue with BCS Search Content Source extraction (still not supported with current version);
-* Updated reference to ReverseDSC 1.9.2.11 to support Integer Arrays;
-* Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
-* Updated to capture Web level Result Sources;
-* Improved and fixed the StandAlone extraction;
-* Changed order of extraction between SPWebApplication and SPContentDatabase to have the DBs created first;
-* Removed requirement to have a Global Search Center for Result Source Extraction;
-* Fixed Exclusion crawl rule issue where invalid parameters were passed;
-* Fixed an Issue with First Index Partition when extracting SPSearchTopology;
-* Changed order of extraction for SPSearchTopology and other Search components
-* Fixed issue with the Ensure value of the SSA level Result Sources;
+* Added a new Graphical User Interface;
+
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -54,6 +31,7 @@
 
 param(
     [ValidateSet("Lite","Default", "Full")]
+    [switch]$Quiet = $false,
     [System.String]$Mode = "Default",
     [switch]$Standalone,
     [Boolean]$Confirm = $true,
@@ -81,7 +59,7 @@ if($Mode.ToLower() -eq "lite")
 {
     $Script:ExtractionModeValue = 1
 }
-elseif($Mode.ToLower() -eq "full")
+elseif($Mode.ToLower() -eq "full" -or !$Quiet)
 {
     $Script:ExtractionModeValue = 3
 }
@@ -204,256 +182,419 @@ function Orchestrator
                 Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPInstall
 
-                Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarm -ServerName $spServer.Address
+                if($Quiet -or $chckFarmConfig.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarm -ServerName $spServer.Address
+                }
             }
 
             if($serverNumber -eq 1)
             {
-                Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPManagedAccounts
+                if($Quiet -or $chckManagedAccount.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPManagedAccounts
+                }
 
-                if(!$SkipSitesAndWebs)
+                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPContentDatabase
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebApplications
+                if($Quiet -or $chckWebApp.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplications
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppPermissions
+                if($Quiet -or $chckWebAppPerm.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppPermissions
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAlternateUrl
+                if($Quiet -or $chckAlternateURL.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAlternateUrl
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPManagedPaths
+                if($Quiet -or $chckManagedPaths.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPManagedPaths
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPServiceApplicationPools
+                if($Quiet -or $chckServiceAppPool.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPServiceApplicationPools
+                }
 
                 if(!$SkipSitesAndWebs)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPQuotaTemplate
+                    if($Quiet -or $chckQuotaTemplates.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPQuotaTemplate
+                    }
 
-                    Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSitesAndWebs
+                    if($Quiet -or $chckSiteCollection.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSitesAndWebs
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-DiagnosticLoggingSettings
+                if($Quiet -or $chckDiagLogging.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-DiagnosticLoggingSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPUsageServiceApplication
+                if($Quiet -or $chckSAUsage.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUsageServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppPolicy
+                if($Quiet -or $chckWebAppPolicy.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppPolicy
+                }
 
-                Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-StateServiceApplication
+                if($Quiet -or $chckSAState.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-StateServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPUserProfileServiceApplication
+                if($Quiet -or $chckUPSA.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPMachineTranslationServiceApp
+                if($Quiet -or $chckSAMachine.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPMachineTranslationServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-CacheAccounts
+                if($Quiet -or $chckCacheAccounts.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-CacheAccounts
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SecureStoreServiceApplication
+                if($Quiet -or $chckSASecureStore.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SecureStoreServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-BCSServiceApplication
+                if($Quiet -or $chckSABCS.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-BCSServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SearchServiceApplication
+                if($Quiet -or $chckSearchSA.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SearchServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-ManagedMetadataServiceApplication
+                if($Quiet -or $chckSAMMS.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-ManagedMetadataServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAccessServiceApp
+                if($Quiet -or $chckSAAccess.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAccessServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAccessServices2010
+                if($Quiet -or $chckSAAccess2010.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAccessServices2010
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAntivirusSettings
+                if($Quiet -or $chckAntivirus.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAntivirusSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppCatalog
+                if($Quiet -or $chckAppCatalog.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppCatalog
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSubscriptionSettingsServiceApp
+                if($Quiet -or $chckSASub.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSubscriptionSettingsServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppDomain
+                if($Quiet -or $chckAppDomain.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppDomain
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppManagementServiceApp
+                if($Quiet -or $chckSAAppMan.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppManagementServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppStoreSettings
+                if($Quiet -or $chckAppStore.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppStoreSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPBlobCacheSettings
+                if($Quiet -or $chckBlobCache.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPBlobCacheSettings
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPDatabaseAAG
+                    if($Quiet -or $chckDatabaseAAG.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPDatabaseAAG
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPDistributedCacheService
+                if($Quiet -or $chckDistributedCache.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPDistributedCacheService
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPExcelServiceApp
+                if($Quiet -or $chckSAExcel.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPExcelServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmAdministrators
+                if($Quiet -or $chckFarmAdmin.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmAdministrators
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmSolution
+                if($Quiet -or $chckFarmSolution.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmSolution
+                }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPHealthAnalyzerRuleState
+                    if($Quiet -or $chckHealth.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPHealthAnalyzerRuleState
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPIrmSettings
+                if($Quiet -or $chckIRM.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPIrmSettings
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPOfficeOnlineServerBinding
+                    if($Quiet -or $chckOOS.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPOfficeOnlineServerBinding
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchTopology
+                if($Quiet -or $chckSearchTopo.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchTopology
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchIndexPartition
+                if($Quiet -or $chckSearchIndexPart.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchIndexPartition
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchCrawlRule
+                    if($Quiet -or $chckSearchCrawlRule.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchCrawlRule
+                    }
 
-                    Write-Host "["$spServer.Name"] Scanning Crawler Impact Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchCrawlerImpactRule
+                    if($Quiet -or $chckSearchCrawlerImpact.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Crawler Impact Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchCrawlerImpactRule
+                    }
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchFileType
+                    if($Quiet -or $chckSearchFileTypes.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchFileType
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchResultSource
+                    if($Quiet -or $chckSearchResultSources.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchResultSource
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Search Managed Properties..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchManagedProperty
+                    if($Quiet -or $chckManagedProp.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search Managed Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchManagedProperty
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWordAutomationServiceApplication
+                if($Quiet -or $chckSAWord.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWordAutomationServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPVisioServiceApplication
+                if($Quiet -or $chckSAVisio.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPVisioServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWorkManagementServiceApplication
+                if($Quiet -or $chckSAWork.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWorkManagementServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPPerformancePointServiceApplication
+                if($Quiet -or $chckSAPerformance.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPPerformancePointServiceApplication
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppWorkflowSettings
-                }
+                    if($Quiet -or $chckWAWorkflow.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppWorkflowSettings
+                    }
 
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppThrottlingSettings
+                    if($Quiet -or $chckWAThrottling.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppThrottlingSettings
+                    }
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPTimerJobState
+                    if($Quiet -or $chckTimerJob.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPTimerJobState
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppSiteUseAndDeletion
+                    if($Quiet -or $chckWADeletion.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppSiteUseAndDeletion
+                    }
+
+                    if($Quiet -or $chckWAProxyGroup.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppProxyGroup
+                    }
+
+                    if($Quiet -or $chckWAExtension.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebApplicationExtension
+                    }
+                }
+
+                if($Quiet -or $chckWAAppDomain.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplicationAppDomain
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppProxyGroup
+                    if($Quiet -or $chckWAGeneral.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppGeneralSettings
+                    }
+                }
+
+                if($Quiet -or $chckWABlockedFiles.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppBlockedFileTypes
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebApplicationExtension
-                }
+                    if($Quiet -or $chckUPSSection.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileSection
+                    }
+                    
+                    if($Quiet -or $chckUPSProp.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileProperty
+                    }
 
-                Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebApplicationAppDomain
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppGeneralSettings
-                }
-
-                Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppBlockedFileTypes
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileSection
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileProperty
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileServiceAppPermissions
-                }
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileSyncConnection
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
+                    if($Quiet -or $chckUPSPermissions.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileServiceAppPermissions
+                    }
+                    
+                    if($Quiet -or $chckUPSSync.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileSyncConnection
+                    }
+                                        
                     Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPTrustedIdentityTokenIssuer
                 }
@@ -1329,7 +1470,7 @@ function Read-SPSitesAndWebs ()
                 }
 
                 Read-SPSiteUrl($spSite.Url)
-                if($Script:ExtractionModeValue -eq 3)
+                if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckSPWeb.Checked)
                 {
                     $webs = Get-SPWeb -Limit All -Site $spsite
                     $j = 1
@@ -5775,7 +5916,7 @@ function DisplayGUI()
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
     $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
-    $btnExtract.Add_Click()
+    $btnExtract.Add_Click({Get-SPReverseDSC})
     $panelMenu.Controls.Add($btnExtract);
 
     $form.Controls.Add($panelMenu);
@@ -5790,7 +5931,14 @@ Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
 $sharePointSnapin = Get-PSSnapin | Where-Object{$_.Name -eq "Microsoft.SharePoint.PowerShell"}
 if($null -ne $sharePointSnapin)
 {
-    Get-SPReverseDSC
+    if($quiet)
+    {
+        Get-SPReverseDSC
+    }
+    else
+    {
+        DisplayGUI
+    }
 }
 else
 {
