@@ -594,69 +594,61 @@ function Orchestrator
                         Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPUserProfileSyncConnection
                     }
-                                        
-                    Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPTrustedIdentityTokenIssuer
-                }
-
-                Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmPropertyBag
-
-                Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSessionStateService
-
-                Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPPublishServiceApplication
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPRemoteFarmTrust
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPPasswordChangeSettings
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPServiceAppSecurity
-                }
-            }
-
-            Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-            if(!$Standalone -and !$nodeLoopDone)
-            {
-                Read-SPServiceInstance -Servers @($spServer.Name)
-
-                $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-                $Script:dscConfigContent += "            {`r`n"
-                $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-                $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-
-                $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
-                $Script:dscConfigContent += "            }`r`n"
-                $Script:dscConfigContent += "        }`r`n"
-            }
-            else
-            {
-                $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
-
-                $serverAddresses = @()
-                foreach($server in $servers)
-                {
-                    $serverAddresses += $server.Address
-                }
-                if(!$serviceLoopDone)
-                {
-                    Read-SPServiceInstance -Servers $serverAddresses
                     
+                    if($Quiet -or $chckTrustedIdentity.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPTrustedIdentityTokenIssuer
+                    }
+                }
+
+                if($Quiet -or $chckFarmPropBag.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmPropertyBag
+                }
+
+                if($Quiet -or $chckSessionState.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSessionStateService
+                }
+
+                if($Quiet -or $chckSAPublish.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPPublishServiceApplication
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    if($Quiet -or $chckRemoteTrust.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPRemoteFarmTrust
+                    }
+
+                    if($Quiet -or $chckPasswordChange.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPPasswordChangeSettings
+                    }
+
+                    if($Quiet -or $chckSASecurity.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPServiceAppSecurity
+                    }
+                }
+            }
+
+            if($Quiet -or $chckServiceInstance.Checked)
+            {
+                Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                if(!$Standalone -and !$nodeLoopDone)
+                {
+                    Read-SPServiceInstance -Servers @($spServer.Name)
+
                     $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
@@ -669,8 +661,34 @@ function Orchestrator
                     $Script:dscConfigContent += "            }`r`n"
                     $Script:dscConfigContent += "        }`r`n"
                 }
-            }
+                else
+                {
+                    $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
 
+                    $serverAddresses = @()
+                    foreach($server in $servers)
+                    {
+                        $serverAddresses += $server.Address
+                    }
+                    if(!$serviceLoopDone)
+                    {
+                        Read-SPServiceInstance -Servers $serverAddresses
+                    
+                        $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                        $Script:dscConfigContent += "            {`r`n"
+                        $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                        $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                        $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                        $Script:dscConfigContent += "            }`r`n"
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                }
+            }
+            
             Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
             if($serverNumber -eq 1 -or !$nodeLoopDone)
             {
