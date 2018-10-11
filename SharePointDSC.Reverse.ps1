@@ -164,10 +164,11 @@ function Orchestrator
         {
             if($Standalone)
             {
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description ""
+                $Script:currentServerName = $env:COMPUTERNAME
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
             }
             else {
-                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
+                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description "Identifier for the Current Server"
             }
 
             if($serverNumber -eq 1)
@@ -185,7 +186,7 @@ function Orchestrator
             {
                 if($StandAlone)
                 {
-                    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "StandAlone" -Description "MinRole for the current server;"
+                    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
                 }
                 else {
                     Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
@@ -5195,7 +5196,15 @@ function DisplayGUI()
 
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Autosize = $true
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    $form.Width = $screens[0].Bounds.Width
+    $form.Height = $screens[0].Bounds.Height - 60 
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized 
+
+    $panelMain = New-Object System.Windows.Forms.Panel
+    $panelMain.Width = $form.Width
+    $panelMain.Height = $form.Height
+    $panelMain.AutoScroll = $true    
 
     #region Information Architecture
     $labelInformationArchitecture = New-Object System.Windows.Forms.Label
@@ -5203,7 +5212,7 @@ function DisplayGUI()
     $labelInformationArchitecture.Text = "Information Architecture:"
     $labelInformationArchitecture.AutoSize = $true
     $labelInformationArchitecture.Font = [System.Drawing.Font]::new($labelInformationArchitecture.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelInformationArchitecture)
+    $panelMain.Controls.Add($labelInformationArchitecture)
 
     $panelInformationArchitecture = New-Object System.Windows.Forms.Panel
     $panelInformationArchitecture.Top = 50 + $topBannerHeight
@@ -5244,7 +5253,7 @@ function DisplayGUI()
     $chckSPWeb.Text = "Subsites (SPWeb)"
     $panelInformationArchitecture.Controls.Add($chckSPWeb)
 
-    $form.Controls.Add($panelInformationArchitecture)
+    $panelMain.Controls.Add($panelInformationArchitecture)
     #endregion
 
     #region Security
@@ -5254,7 +5263,7 @@ function DisplayGUI()
     $labelSecurity.Top = 190 + $topBannerHeight
     $labelSecurity.Left = $firstColumnLeft
     $labelSecurity.Font = [System.Drawing.Font]::new($labelSecurity.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSecurity)
+    $panelMain.Controls.Add($labelSecurity)
 
     $panelSecurity = New-Object System.Windows.Forms.Panel
     $panelSecurity.Top = 240 + $topBannerHeight
@@ -5311,7 +5320,7 @@ function DisplayGUI()
     $chckTrustedIdentity.Text = "Trusted Identity Token Issuer"
     $panelSecurity.Controls.Add($chckTrustedIdentity);
 
-    $form.Controls.Add($panelSecurity)
+    $panelMain.Controls.Add($panelSecurity)
     #endregion
 
     #region Service Applications
@@ -5321,7 +5330,7 @@ function DisplayGUI()
     $labelSA.Top = 450 + $topBannerHeight
     $labelSA.Left = $firstColumnLeft
     $labelSA.Font = [System.Drawing.Font]::new($labelSA.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSA)
+    $panelMain.Controls.Add($labelSA)
 
     $panelSA = New-Object System.Windows.Forms.Panel
     $panelSA.Top = 500 + $topBannerHeight
@@ -5458,7 +5467,7 @@ function DisplayGUI()
     $chckSAWork.Text = "Work Management"
     $panelSA.Controls.Add($chckSAWork);
 
-    $form.Controls.Add($panelSA)
+    $panelMain.Controls.Add($panelSA)
     #endregion
 
     #region Search
@@ -5468,7 +5477,7 @@ function DisplayGUI()
     $labelSearch.AutoSize = $true
     $labelSearch.Left = $secondColumnLeft
     $labelSearch.Font = [System.Drawing.Font]::new($labelSearch.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSearch)
+    $panelMain.Controls.Add($labelSearch)
 
     $panelSearch = New-Object System.Windows.Forms.Panel
     $panelSearch.Top = 50 + $topBannerHeight
@@ -5549,7 +5558,7 @@ function DisplayGUI()
     $chckSearchTopo.Text = "Topology"
     $panelSearch.Controls.Add($chckSearchTopo);
 
-    $form.Controls.Add($panelSearch)
+    $panelMain.Controls.Add($panelSearch)
     #endregion
 
     #region Web Applications
@@ -5559,7 +5568,7 @@ function DisplayGUI()
     $labelWebApplications.Top = 340 + $topBannerHeight
     $labelWebApplications.Left = $secondColumnLeft
     $labelWebApplications.Font = [System.Drawing.Font]::new($labelWebApplications.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelWebApplications)
+    $panelMain.Controls.Add($labelWebApplications)
 
     $panelWebApp = New-Object System.Windows.Forms.Panel
     $panelWebApp.Top = 400 + $topBannerHeight
@@ -5656,7 +5665,7 @@ function DisplayGUI()
     $chckWAWorkflow.Text = "Workflow Settings"
     $panelWebApp.Controls.Add($chckWAWorkflow);
 
-    $form.Controls.Add($panelWebApp)
+    $panelMain.Controls.Add($panelWebApp)
     #endregion
 
     #region Customization
@@ -5666,7 +5675,7 @@ function DisplayGUI()
     $labelCustomization.Top = 760 + $topBannerHeight
     $labelCustomization.Left = $secondColumnLeft
     $labelCustomization.Font = [System.Drawing.Font]::new($labelCustomization.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelCustomization)
+    $panelMain.Controls.Add($labelCustomization)
 
     $panelCustomization = New-Object System.Windows.Forms.Panel
     $panelCustomization.Top = 830 + $topBannerHeight
@@ -5707,7 +5716,7 @@ function DisplayGUI()
     $chckFarmSolution.Text = "Farm Solutions"
     $panelCustomization.Controls.Add($chckFarmSolution);
 
-    $form.Controls.Add($panelCustomization)
+    $panelMain.Controls.Add($panelCustomization)
     #endregion
 
     #region Configuration
@@ -5717,7 +5726,7 @@ function DisplayGUI()
     $labelConfiguration.Top = 220 + $topBannerHeight
     $labelConfiguration.Left = $thirdColumnLeft
     $labelConfiguration.Font = [System.Drawing.Font]::new($labelConfiguration.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelConfiguration)
+    $panelMain.Controls.Add($labelConfiguration)
 
     $panelConfig = New-Object System.Windows.Forms.Panel
     $panelConfig.Top = 280 + $topBannerHeight
@@ -5886,7 +5895,7 @@ function DisplayGUI()
     $chckTimerJob.Text = "Timer Job States"
     $panelConfig.Controls.Add($chckTimerJob);
 
-    $form.Controls.Add($panelConfig)
+    $panelMain.Controls.Add($panelConfig)
     #endregion
 
     #region User Profile Service
@@ -5896,7 +5905,7 @@ function DisplayGUI()
     $lblUPS.AutoSize = $true
     $lblUPS.Left = $thirdColumnLeft
     $lblUPS.Font = [System.Drawing.Font]::new($lblUPS.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($lblUPS)
+    $panelMain.Controls.Add($lblUPS)
 
     $panelUPS = New-Object System.Windows.Forms.Panel
     $panelUPS.Top = 50 + $topBannerHeight
@@ -5945,7 +5954,7 @@ function DisplayGUI()
     $chckUPSPermissions.Text = "User Profile Service Permissions"
     $panelUPS.Controls.Add($chckUPSPermissions);
 
-    $form.Controls.Add($panelUPS)
+    $panelMain.Controls.Add($panelUPS)
     #endregion
 
     #region Extraction Modes
@@ -5956,37 +5965,37 @@ function DisplayGUI()
     #region Top Menu
     $panelMenu = New-Object System.Windows.Forms.Panel
     $panelMenu.Height = $topBannerHeight
-    $panelMenu.Width = $form.width
+    $panelMenu.Width = $form.Width
     $panelMenu.BackColor = [System.Drawing.Color]::Silver
 
     $lblMode = New-Object System.Windows.Forms.Label
     $lblMode.Top = 25
     $lblMode.Text = "Extraction Modes:"
     $lblMode.AutoSize = $true
-    $lblMode.Left = 20
+    $lblMode.Left = 10
     $lblMode.Font = [System.Drawing.Font]::new($lblMode.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblMode)
 
     $btnLite = New-Object System.Windows.Forms.Button
-    $btnLite.AutoSize = $true
+    $btnLite.Width = 100
     $btnLite.Top = 20
-    $btnLite.Left = 220
+    $btnLite.Left = 120
     $btnLite.Text = "Lite"
     $btnLite.Add_Click({SelectComponentsForMode(1)})
     $panelMenu.Controls.Add($btnLite);
 
     $btnDefault = New-Object System.Windows.Forms.Button
-    $btnDefault.AutoSize = $true
-    $btnDefault.top = 20
-    $btnDefault.Left = 300
+    $btnDefault.Width = 100
+    $btnDefault.Top = 20
+    $btnDefault.Left = 220
     $btnDefault.Text = "Default"
     $btnDefault.Add_Click({SelectComponentsForMode(2)})
     $panelMenu.Controls.Add($btnDefault);
 
     $btnFull = New-Object System.Windows.Forms.Button
-    $btnFull.AutoSize = $true
+    $btnFull.Width = 100
     $btnFull.Top = 20
-    $btnFull.Left = 400
+    $btnFull.Left = 320
     $btnFull.Text = "Full"
     $btnFull.Add_Click({SelectComponentsForMode(3)})
     $panelMenu.Controls.Add($btnFull);
@@ -6043,7 +6052,7 @@ function DisplayGUI()
     $btnExtract.Width = 178
     $btnExtract.Height = 70
     $btnExtract.Top = 0
-    $btnExtract.Left = 1300
+    $btnExtract.Left = $form.Width - 200
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
     $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
@@ -6060,7 +6069,6 @@ function DisplayGUI()
     })
     $panelMenu.Controls.Add($btnExtract);
 
-
     $txtPassword = New-Object System.Windows.Forms.Textbox
     $txtPassword.Top = 35
     $txtPassword.Left = 1080
@@ -6075,9 +6083,11 @@ function DisplayGUI()
     })
     $panelMenu.Controls.Add($txtPassword)
 
-    $form.Controls.Add($panelMenu);
+    $panelMain.Controls.Add($panelMenu);
     #endregion
 
+    $panelMain.AutoScroll = $true
+    $form.Controls.Add($panelMain)
     $form.Text = "ReverseDSC for SharePoint - v2.6.0.0"
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.ShowDialog()
