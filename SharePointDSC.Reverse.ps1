@@ -264,16 +264,16 @@ function Orchestrator
                     Read-SPManagedAccounts
                 }
 
-                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPContentDatabase
-                }
-
                 if($Quiet -or $chckWebApp.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPWebApplications
+                }
+
+                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPContentDatabase
                 }
 
                 if($Quiet -or $chckWebAppPerm.Checked)
