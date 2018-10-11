@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.5.2.1
+.VERSION 2.6.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,27 +16,8 @@
 
 .RELEASENOTES
 
-* Updated Requirement for SharePointDSC 2.5.0.0;
-* Fixed issue with Central Admin Invalid Port;
-* Filtered out invalid usernames (e.g. true) from Web App Policies;
-* Added support for the SPSiteUrl Resource;
-* Fixed and issue with retrieving Search Service Application without the ApplicationPool specified;
-* Fixed an issue with multiple lines in SPSite and SPWeb descriptions;
-* Fixed issue with Other languages than english when extracting configuration database;
-* Fixed issue where an invalid DSC block structure was sent for SPStateServiceApp;
-* Changed behavior for Site Collection Owner. If Service account, use variable, otherwise plaintext;
-* Removed the invalid Ensure parameter from being extracted from SPUserProfileSyncConnection;
-* Fixed an issue with SPWebAppPolicy not properly converting Members CIMInstance;
-* Removed the requirement to provide credentials for each service application;
-* Fixes for French (and multilingual) Service Applications;
-* Web App Policies now using strings for unmanaged usernames;
-* Fixed issue with BCS Search Content Source extraction (still not supported with current version);
-* Updated reference to ReverseDSC 1.9.2.11 to support Integer Arrays;
-* Fixed an issue where if the Web Application port is specified in the URL, that we don't also specify the port property;
-* Updated to capture Web level Result Sources;
-* Improved the StandAlone extraction;
-* Changed Order of extraction between SPWebApplication and SPCOntentDatabase to have the DBs created first;
-* Removed requirement to have a Global Search Center for Result Source Extraction;
+* Added a new Graphical User Interface;
+
 #>
 
 #Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
@@ -50,6 +31,7 @@
 
 param(
     [ValidateSet("Lite","Default", "Full")]
+    [switch]$Quiet = $false,
     [System.String]$Mode = "Default",
     [switch]$Standalone,
     [Boolean]$Confirm = $true,
@@ -101,12 +83,33 @@ function Orchestrator
     Test-Prerequisites
     Import-Module -Name "ReverseDSC" -Force
 
-    $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+    if($Quiet)
+    {
+        $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+    }
+    else
+    {
+        $password = ConvertTo-SecureString $txtPassword.Text -AsPlainText -Force
+        $Global:spFarmAccount = New-Object System.Management.Automation.PSCredential ($txtFarmAccount.Text, $password)
+    }
     Save-Credentials $Global:spFarmAccount.UserName
+
+    # Add the Install Account for the User Profile Service Sync;
+    Save-Credentials "InstallAccount"
 
     $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
     $spFarm = Get-SPFarm
     $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
+
+    if($chckStandAlone.Checked)
+    {
+        $Standalone = $true
+    }
+    else
+    {
+        $Standalone = $false
+    }
+
     if($Standalone)
     {
         $i = 0;
@@ -135,7 +138,7 @@ function Orchestrator
     {
         $Script:configName = "SPStandalone"
     }
-    if($Script:ExtractionModeValue -eq 3)
+    elseif($Script:ExtractionModeValue -eq 3)
     {
         $Script:configName += "-Full"
     }
@@ -166,7 +169,6 @@ function Orchestrator
             else {
                 Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
             }
-           
 
             if($serverNumber -eq 1)
             {
@@ -198,309 +200,512 @@ function Orchestrator
                 Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
                 Read-SPInstall
 
-                Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarm -ServerName $spServer.Address
+                if($Quiet -or $chckFarmConfig.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarm -ServerName $spServer.Address
+                }
             }
+
+            #region SPServiceInstance
+            if($Quiet -or $chckServiceInstance.Checked)
+            {
+                Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                if(!$Standalone -and !$nodeLoopDone)
+                {
+                    Read-SPServiceInstance -Servers @($spServer.Name)
+
+                    $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                    $Script:dscConfigContent += "            {`r`n"
+                    $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                    $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                    $Script:dscConfigContent += "            }`r`n"
+                    $Script:dscConfigContent += "        }`r`n"
+                }
+                else
+                {
+                    $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
+
+                    $serverAddresses = @()
+                    foreach($server in $servers)
+                    {
+                        $serverAddresses += $server.Address
+                    }
+                    if(!$serviceLoopDone)
+                    {
+                        Read-SPServiceInstance -Servers $serverAddresses
+                    
+                        $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                        $Script:dscConfigContent += "            {`r`n"
+                        $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                        $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                        $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                        $Script:dscConfigContent += "            }`r`n"
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                }
+            }
+            #endregion
 
             if($serverNumber -eq 1)
             {
-                Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPManagedAccounts
+                if($Quiet -or $chckManagedAccount.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPManagedAccounts
+                }
 
-                if($SkipSitesAndWebs)
+                if($Quiet -or $chckWebApp.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplications
+                }
+
+                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPContentDatabase
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebApplications
+                if($Quiet -or $chckWebAppPerm.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppPermissions
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application(s) Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppPermissions
+                if($Quiet -or $chckAlternateURL.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAlternateUrl
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Alternate Url(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAlternateUrl
+                if($Quiet -or $chckManagedPaths.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPManagedPaths
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Managed Path(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPManagedPaths
-
-                Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPServiceApplicationPools
+                if($Quiet -or $chckServiceAppPool.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Application Pool(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPServiceApplicationPools
+                }
 
                 if(!$SkipSitesAndWebs)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPQuotaTemplate
+                    if($Quiet -or $chckQuotaTemplates.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Quota Template(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPQuotaTemplate
+                    }
 
-                    Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSitesAndWebs
+                    if($Quiet -or $chckSiteCollection.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Site Collection(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSitesAndWebs
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-DiagnosticLoggingSettings
+                if($Quiet -or $chckDiagLogging.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Diagnostic Logging Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-DiagnosticLoggingSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPUsageServiceApplication
+                if($Quiet -or $chckSAUsage.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Usage Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUsageServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppPolicy
+                if($Quiet -or $chckWebAppPolicy.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application Policy..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppPolicy
+                }
 
-                Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-StateServiceApplication
+                if($Quiet -or $chckSAState.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning State Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-StateServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPUserProfileServiceApplication
+                if($Quiet -or $chckUPSA.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning User Profile Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPUserProfileServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPMachineTranslationServiceApp
+                if($Quiet -or $chckSAMachine.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Machine Translation Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPMachineTranslationServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-CacheAccounts
+                if($Quiet -or $chckCacheAccounts.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Cache Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-CacheAccounts
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SecureStoreServiceApplication
+                if($Quiet -or $chckSASecureStore.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Secure Store Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SecureStoreServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-BCSServiceApplication
+                if($Quiet -or $chckSABCS.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Business Connectivity Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-BCSServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SearchServiceApplication
+                if($Quiet -or $chckSearchSA.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SearchServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-ManagedMetadataServiceApplication
+                if($Quiet -or $chckSAMMS.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Metadata Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-ManagedMetadataServiceApplication
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAccessServiceApp
+                if($Quiet -or $chckSAAccess.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Access Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAccessServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAccessServices2010
+                if($Quiet -or $chckSAAccess2010.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Access Services 2010 Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAccessServices2010
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAntivirusSettings
+                if($Quiet -or $chckAntivirus.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Antivirus Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAntivirusSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppCatalog
+                if($Quiet -or $chckAppCatalog.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Catalog Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppCatalog
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSubscriptionSettingsServiceApp
+                if($Quiet -or $chckSASub.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Subscription Settings Service Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSubscriptionSettingsServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppDomain
+                if($Quiet -or $chckAppDomain.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Domain Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppDomain
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppManagementServiceApp
+                if($Quiet -or $chckSAAppMan.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Management Service App Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppManagementServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPAppStoreSettings
+                if($Quiet -or $chckAppStore.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning App Store Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPAppStoreSettings
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPBlobCacheSettings
+                if($Quiet -or $chckBlobCache.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Blob Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPBlobCacheSettings
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPDatabaseAAG
+                    if($Quiet -or $chckDatabaseAAG.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Database(s) Availability Group Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPDatabaseAAG
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPDistributedCacheService
+                if($Quiet -or $chckDistributedCache.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Distributed Cache Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPDistributedCacheService
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPExcelServiceApp
+                if($Quiet -or $chckSAExcel.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Excel Services Application Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPExcelServiceApp
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmAdministrators
+                if($Quiet -or $chckFarmAdmin.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmAdministrators
+                }
 
-                Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmSolution
+                if($Quiet -or $chckFarmSolution.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmSolution
+                }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPHealthAnalyzerRuleState
+                    if($Quiet -or $chckHealth.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Health Rule(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPHealthAnalyzerRuleState
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPIrmSettings
+                if($Quiet -or $chckIRM.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning IRM Settings(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPIrmSettings
+                }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPOfficeOnlineServerBinding
+                    if($Quiet -or $chckOOS.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Office Online Binding(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPOfficeOnlineServerBinding
+                    }
+                }
+
+                if($Quiet -or $chckSearchTopo.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchTopology
+                }
+
+                if($Quiet -or $chckSearchIndexPart.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSearchIndexPartition
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchCrawlRule
+                    if($Quiet -or $chckSearchCrawlRule.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Crawl Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchCrawlRule
+                    }
+
+                    if($Quiet -or $chckSearchCrawlerImpact.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Crawler Impact Rules(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchCrawlerImpactRule
+                    }
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchFileType
+                    if($Quiet -or $chckSearchFileTypes.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search File Type(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchFileType
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPSearchResultSource
-                }
-
-                Write-Host "["$spServer.Name"] Scanning Search Topology..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchTopology
-
-                Write-Host "["$spServer.Name"] Scanning Search Index Partition(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSearchIndexPartition
-
-                Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWordAutomationServiceApplication
-
-                Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPVisioServiceApplication
-
-                Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWorkManagementServiceApplication
-
-                Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPPerformancePointServiceApplication
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppWorkflowSettings
+                    if($Quiet -or $chckSearchResultSources.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search Result Source(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchResultSource
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppThrottlingSettings
+                    if($Quiet -or $chckManagedProp.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Search Managed Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPSearchManagedProperty
+                    }
+                }
+
+                if($Quiet -or $chckSAWord.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Word Automation Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWordAutomationServiceApplication
+                }
+
+                if($Quiet -or $chckSAVisio.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Visio Graphics Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPVisioServiceApplication
+                }
+
+                if($Quiet -or $chckSAWork.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Work Management Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWorkManagementServiceApplication
+                }
+
+                if($Quiet -or $chckSAPerformance.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Performance Point Service Application..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPPerformancePointServiceApplication
+                }
+
+                if($Script:ExtractionModeValue -ge 2)
+                {
+                    if($Quiet -or $chckWAWorkflow.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Workflow Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppWorkflowSettings
+                    }
+
+                    if($Quiet -or $chckWAThrottling.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Throttling Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppThrottlingSettings
+                    }
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
                 {
-                    Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPTimerJobState
+                    if($Quiet -or $chckTimerJob.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning the Timer Job States..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPTimerJobState
+                    }
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppSiteUseAndDeletion
+                    if($Quiet -or $chckWADeletion.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Usage and Deletion Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppSiteUseAndDeletion
+                    }
+
+                    if($Quiet -or $chckWAProxyGroup.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppProxyGroup
+                    }
+
+                    if($Quiet -or $chckWAExtension.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebApplicationExtension
+                    }
+                }
+
+                if($Quiet -or $chckWAAppDomain.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplicationAppDomain
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Proxy Groups..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppProxyGroup
+                    if($Quiet -or $chckWAGeneral.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPWebAppGeneralSettings
+                    }
+                }
+
+                if($Quiet -or $chckWABlockedFiles.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebAppBlockedFileTypes
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Applications Extension(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebApplicationExtension
+                    if($Quiet -or $chckUPSSection.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileSection
+                    }
+                    
+                    if($Quiet -or $chckUPSProp.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileProperty
+                    }
+
+                    if($Quiet -or $chckUPSPermissions.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileServiceAppPermissions
+                    }
+                    
+                    if($Quiet -or $chckUPSSync.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPUserProfileSyncConnection
+                    }
+                    
+                    if($Quiet -or $chckTrustedIdentity.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPTrustedIdentityTokenIssuer
+                    }
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Web Applications App Domain(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebApplicationAppDomain
-
-                if($Script:ExtractionModeValue -ge 2)
+                if($Quiet -or $chckFarmPropBag.Checked)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Web Application(s) General Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebAppGeneralSettings
+                    Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPFarmPropertyBag
                 }
 
-                Write-Host "["$spServer.Name"] Scanning Web Application(s) Blocked File Types..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPWebAppBlockedFileTypes
-
-                if($Script:ExtractionModeValue -ge 2)
+                if($Quiet -or $chckSessionState.Checked)
                 {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Section(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileSection
+                    Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPSessionStateService
                 }
 
-                if($Script:ExtractionModeValue -ge 2)
+                if($Quiet -or $chckSAPublish.Checked)
                 {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Properties..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileProperty
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Permissions..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileServiceAppPermissions
-                }
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning User Profile Sync Connections..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPUserProfileSyncConnection
-                }
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Trusted Identity Token Issuer(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPTrustedIdentityTokenIssuer
-                }
-
-                Write-Host "["$spServer.Name"] Scanning Farm Property Bag..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPFarmPropertyBag
-
-                Write-Host "["$spServer.Name"] Scanning Session State Service..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPSessionStateService
-
-                Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPPublishServiceApplication
-
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPRemoteFarmTrust
+                    Write-Host "["$spServer.Name"] Scanning Published Service Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPPublishServiceApplication
                 }
 
                 if($Script:ExtractionModeValue -ge 2)
                 {
-                    Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPPasswordChangeSettings
-                }
+                    if($Quiet -or $chckRemoteTrust.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPRemoteFarmTrust
+                    }
 
-                if($Script:ExtractionModeValue -ge 2)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPServiceAppSecurity
-                }
-            }
+                    if($Quiet -or $chckPasswordChange.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPPasswordChangeSettings
+                    }
 
-            Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-            if(!$Standalone -and !$nodeLoopDone)
-            {
-                Read-SPServiceInstance -Servers @($spServer.Name)
-
-                $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-                $Script:dscConfigContent += "        {`r`n"
-                $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-                $Script:dscConfigContent += "            {`r`n"
-                $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-                $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-
-                $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
-                $Script:dscConfigContent += "            }`r`n"
-                $Script:dscConfigContent += "        }`r`n"
-            }
-            else
-            {
-                $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
-
-                $serverAddresses = @()
-                foreach($server in $servers)
-                {
-                    $serverAddresses += $server.Address
-                }
-                if(!$serviceLoopDone)
-                {
-                    Read-SPServiceInstance -Servers $serverAddresses
-                    $serviceLoopDone = $true
+                    if($Quiet -or $chckSASecurity.Checked)
+                    {
+                        Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
+                        Read-SPServiceAppSecurity
+                    }
                 }
             }
 
@@ -523,6 +728,10 @@ function Orchestrator
     Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
     Set-ObtainRequiredCredentials
 
+    if($chckAzure.Checked)
+    {
+        $Azure = $true
+    }
     if(!$Azure)
     {
         $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
@@ -841,7 +1050,7 @@ function Read-SPFarm (){
     $Script:dscConfigContent += "        }`r`n"
 
     <# SPFarm Feature Section #>
-    if($Script:ExtractionModeValue -eq 3)
+    if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
     {
         $versionFilter = $spMajorVersion.ToString() + "*"
         $farmFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Farm" -and $_.Version -like $versionFilter}
@@ -934,6 +1143,13 @@ function Read-SPWebApplications (){
             {
                 $results.Remove("Port")
             }
+            elseif($result.Port){
+                $results.Port = 80
+            }
+            else
+            {
+                $results.Add("Port", 80)
+            }
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             if($convertToVariable)
             {
@@ -950,7 +1166,7 @@ function Read-SPWebApplications (){
             }
 
             <# SPWebApplication Feature Section #>
-            if($Script:ExtractionModeValue -eq 3)
+            if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
             {
                 $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                 $versionFilter = $spMajorVersion.ToString() + "*"
@@ -1303,7 +1519,7 @@ function Read-SPSitesAndWebs ()
                 }
 
                 Read-SPSiteUrl($spSite.Url)
-                if($Script:ExtractionModeValue -eq 3)
+                if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckSPWeb.Checked)
                 {
                     $webs = Get-SPWeb -Limit All -Site $spsite
                     $j = 1
@@ -1329,7 +1545,7 @@ function Read-SPSitesAndWebs ()
                             $Script:dscConfigContent += "        }`r`n"
 
                             <# SPWeb Feature Section #>
-                            if($Script:ExtractionModeValue -eq 3)
+                            if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
                             {
                                 $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                                 $versionFilter = $spMajorVersion.ToString() + "*"
@@ -1381,7 +1597,7 @@ function Read-SPSitesAndWebs ()
                     }
                 }
                 <# SPSite Feature Section #>
-                if($Script:ExtractionModeValue -eq 3)
+                if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
                 {
                     $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                     $versionFilter = $spMajorVersion.ToString() + "*"
@@ -1618,7 +1834,6 @@ function Read-SPServiceInstance($Servers)
                 if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
                 {
                     $servicesMasterList += $serviceTypeName
-                    Write-Verbose $serviceTypeName
                     if($serviceTypeName -eq "SPDistributedCacheServiceInstance")
                     {
                         # Do Nothing - This is handled by its own call later on.
@@ -2033,6 +2248,10 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
                     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SocialDBServer" -Value $results.SocialDBServer -Description "Name of the User Profile Social Database Server;"
                     $results.SocialDBServer = "`$ConfigurationData.NonNodeData.SocialDBServer"
 
+                    if($results.PSDSCRunAsCredential)
+                    {
+                        $results.PSDSCRunAsCredential = "`$Credsinstallaccount"
+                    }
                     $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
@@ -3456,17 +3675,19 @@ function Read-SPSearchResultSource()
                 $resultSources = $fedman.ListSources($filter,$true)
 
                 $j = 1
+                $totalRS = $resultSources.Count
                 foreach($resultSource in $resultSources)
                 {
                     <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
                     if($resultSource.Name -ne "Local SharePoint Graph")
                     {
                         $rsName = $resultSource.Name
-                        Write-Host "    -> Scanning Results Source [$j] {$rsName}"
+                        Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
                         $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
                         $Script:dscConfigContent += "        {`r`n"
                         $params.SearchServiceAppName = $serviceName
                         $params.Name = $rsName
+                        $params.Remove("ScopeUrl")
                         $results = Get-TargetResource @params
 
                         $providers = $fedman.ListProviders()
@@ -3478,8 +3699,9 @@ function Read-SPSearchResultSource()
                         {
                             $results.Remove("ConnectionUrl")
                         }
-                        $results.Query = $resultSource.QueryTransform.QueryTemplate
+                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
                         $results.ProviderType = $provider.Name
+                        $results.Ensure = "Present"
                         if($resultSource.ConnectionUrlTemplate)
                         {
                             $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
@@ -3512,25 +3734,32 @@ function Read-SPSearchResultSource()
                                         
                                     foreach($source in $sources)
                                     {
+                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                        $Script:dscConfigContent += "        {`r`n"
+                                        $params.SearchServiceAppName = $serviceName
+                                        $params.Name = $source.Name
+                                        $params.ScopeUrl = $web.Url
+                                        $results = Get-TargetResource @params
+
                                         $providers = $fedman.ListProviders()
                                         $provider = $providers.Values | Where-Object -FilterScript {
                                             $_.Id -eq $source.ProviderId 
                                         }
 
-                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                        $Script:dscConfigContent += "        {`r`n"
-                                        $Script:dscConfigContent += "            Name                 = `"" + $source.Name + "`"`r`n"
-                                        $Script:dscConfigContent += "            SearchServiceAppName = `"" + $serviceName + "`"`r`n"
-                                        $Script:dscConfigContent += "            Query                = `"" + $source.QueryTransform.QueryTemplate + "`"`r`n"
-                                        $Script:dscConfigContent += "            ProviderType         = `"" + $provider.Name + "`"`r`n"
-
+                                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                                        {
+                                            $results.Remove("ConnectionUrl")
+                                        }
+                                        $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
+                                        $results.ProviderType = $provider.Name
+                                        $results.Ensure = "Present"
                                         if($source.ConnectionUrlTemplate)
                                         {
-                                            $Script:dscConfigContent += "            ConnectionUrl         = `"" + $source.ConnectionUrlTemplate + "`"`r`n"
+                                            $results.ConnectionUrl = $source.ConnectionUrlTemplate
                                         }
 
-                                        $Script:dscConfigContent += "            Ensure               = `"Present`"`r`n"
-                                        $Script:dscConfigContent += "            PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                                        $results = Repair-Credentials -results $results
+                                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                                         $Script:dscConfigContent += "        }`r`n"
                                     }
 
@@ -3568,7 +3797,7 @@ function Read-SPSearchCrawlRule()
             if($null -ne $ssa)
             {
                 $serviceName = $ssa.DisplayName
-                Write-Host "Scanning Cral Rules for Search Service Application [$i/$total] {$serviceName}"
+                Write-Host "Scanning Crawl Rules for Search Service Application [$i/$total] {$serviceName}"
 
                 $crawlRules = Get-SPEnterpriseSearchCrawlRule -SearchApplication $ssa
 
@@ -3585,6 +3814,11 @@ function Read-SPSearchCrawlRule()
                     $params.Path = $crPath
                     $params.Remove("CertificateName")
                     $results = Get-TargetResource @params
+
+                    if($results.RuleType -eq "ExclusionRule" -and $results.AuthenticationType)
+                    {
+                        $results.Remove("AuthenticationType")
+                    }
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
@@ -3596,6 +3830,55 @@ function Read-SPSearchCrawlRule()
         catch
         {
             $Script:ErrorLog += "[Search Crawl Rule]" + $ssa.DisplayName + "`r`n"
+            $Script:ErrorLog += "$_`r`n`r`n"
+        }
+    }
+}
+
+function Read-SPSearchManagedProperty()
+{
+    $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPSearchManagedProperty\MSFT_SPSearchManagedProperty.psm1")
+    Import-Module $module
+    $params = Get-DSCFakeParameters -ModulePath $module
+
+    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
+    $i = 1
+    $total = $ssas.Length
+    foreach($ssa in $ssas)
+    {
+        try
+        {
+            if($null -ne $ssa)
+            {
+                $serviceName = $ssa.DisplayName
+                Write-Host "Scanning Managed Properties for Search Service Application [$i/$total] {$serviceName}"
+
+                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa
+
+                $j = 1
+                $total = $properties.Length
+                foreach($property in $properties)
+                {
+                    Write-Host "    -> Scanning Managed Property [$j/$total] {$($property.Name)}"
+
+                    $Script:dscConfigContent += "        SPSearchManagedProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $params.ServiceAppName = $serviceName
+                    $params.Name = $property.Name
+                    $params.PropertyType = $property.ManagedType
+                    $results = Get-TargetResource @params
+
+                    $results = Repair-Credentials -results $results
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                    $j++
+                }
+            }
+            $i++
+        }
+        catch
+        {
+            $Script:ErrorLog += "[Search Managed Property]" + $ssa.DisplayName + "`r`n"
             $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
@@ -3733,10 +4016,13 @@ function Read-SPFarmSolution()
     $params = Get-DSCFakeParameters -ModulePath $module
     $solutions = Get-SPSolution
 
+    $i = 1
+    $total = $solutions.Length
     foreach($solution in $solutions)
     {
         try
         {
+            Write-Host "Scanning Solution [$i/$total] {$($solution.Name)}"
             $Script:dscConfigContent += "        SPFarmSolution " + [System.Guid]::NewGuid().ToString() + "`r`n"
             $Script:dscConfigContent += "        {`r`n"
             $params.Name = $solution.Name
@@ -3761,6 +4047,7 @@ function Read-SPFarmSolution()
             $Script:ErrorLog += "[Farm Solution]" + $solution.Name + "`r`n"
             $Script:ErrorLog += "$_`r`n`r`n"
         }
+        $i++
     }
 }
 
@@ -4021,7 +4308,13 @@ function Read-SPWebAppGeneralSettings()
         $params.Url = $webApp.Url
         $Script:dscConfigContent += "        SPWebAppGeneralSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
+
         $results = Get-TargetResource @params
+
+        if($results.DefaultQuotaTemplate -eq "No Quota" -or $results.DefaultQuotaTemplate -eq "")
+        {
+            $results.Remove("DefaultQuotaTemplate")
+        }
 
         $results = Repair-Credentials -results $results
         if($results.TimeZone -eq -1 -or $null -eq $results.TimeZone)
@@ -4204,6 +4497,24 @@ function Read-SPUserProfileProperty()
                     $params.UserProfileService = $userProfileServiceApp[0].DisplayName
                     $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
+
+                    <# Cleanup empty properties #>
+                    try {
+                        foreach($param in $params)
+                        {
+                            if($param -eq "")
+                            {
+                                $params.Remove($param)
+                            }
+                        }
+                    }
+                    catch
+                    { }
+
+                    if($params.MappingConnectionName -eq "*")
+                    {
+                        $params.Remove("MappingConnectionName")
+                    }
                     $results = Get-TargetResource @params
 
                     <# WA - Bug in SPDSC 1.7.0.0 where param returned is named UserProfileServiceAppName instead of
@@ -4706,11 +5017,15 @@ function Get-SPReverseDSC()
 
     <## Prompts the user to specify the FOLDER path where the resulting PowerShell DSC Configuration Script will be saved. #>
     $fileName = "SPFarmConfig"
+    if($chckStandalone.Checked)
+    {
+        $Standalone = $true
+    }
     if($Standalone)
     {
         $fileName = "SPStandalone"
     }
-    if($Script:ExtractionModeValue -eq 3)
+    elseif($Script:ExtractionModeValue -eq 3)
     {
         $fileName += "-Full"
     }
@@ -4771,6 +5086,9 @@ function Get-SPReverseDSC()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
     }
 
+    if($chckAzure.Checked){
+        $Azure = $true
+    }
     if(!$Azure)
     {
         $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
@@ -4809,7 +5127,7 @@ function Set-ObtainRequiredCredentials()
     {
         if(!$credential.ToLower().StartsWith("builtin"))
         {
-            if(!$Azure)
+            if(!$chckAzure.Checked)
             {
                 $credsContent += "    " + (Resolve-Credentials $credential) + " = Get-Credential -UserName `"" + $credential + "`" -Message `"Please provide credentials`"`r`n"
             }
@@ -4825,11 +5143,960 @@ function Set-ObtainRequiredCredentials()
     $Script:dscConfigContent = $Script:dscConfigContent.Insert($startPosition, $credsContent)
 }
 
+#region GUI
+
+#region GUI Related Functions
+function SelectComponentsForMode($mode){
+    $components = $null
+    if($mode -eq 1)
+    {
+        $components = $liteComponents
+    }
+    elseif($mode -eq 2)
+    {
+        $components = $defaultComponents
+    }
+    foreach($panel in $form.Controls)
+    {
+        if($panel.GetType().ToString() -eq "System.Windows.Forms.Panel")
+        {
+            foreach($control in ([System.Windows.Forms.Panel]$panel).Controls){
+                try{
+                    if($mode -ne 3)
+                    {
+                        $control.Checked = $false
+                    }
+                    else
+                    {
+                        $control.Checked = $true
+                    }
+                }
+                catch{}
+            }
+        }
+    }
+    foreach($control in $components)
+    {
+        try{
+            $control.Checked = $true
+        }
+        catch{}
+    }
+}
+#endregion
+function DisplayGUI()
+{
+    #region Global
+    $firstColumnLeft = 10
+    $secondColumnLeft = 500
+    $thirdColumnLeft = 1000
+    $topBannerHeight = 70
+    #endregion
+
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Autosize = $true
+
+    #region Information Architecture
+    $labelInformationArchitecture = New-Object System.Windows.Forms.Label
+    $labelInformationArchitecture.Top = $topBannerHeight
+    $labelInformationArchitecture.Text = "Information Architecture:"
+    $labelInformationArchitecture.AutoSize = $true
+    $labelInformationArchitecture.Font = [System.Drawing.Font]::new($labelInformationArchitecture.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelInformationArchitecture)
+
+    $panelInformationArchitecture = New-Object System.Windows.Forms.Panel
+    $panelInformationArchitecture.Top = 50 + $topBannerHeight
+    $panelInformationArchitecture.Left = $firstColumnLeft
+    $panelInformationArchitecture.AutoSize = $true
+    $panelInformationArchitecture.Width = 400
+    $panelInformationArchitecture.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+    
+    $chckContentDB = New-Object System.Windows.Forms.CheckBox
+    $chckContentDB.Top = 0
+    $chckContentDB.AutoSize = $true;
+    $chckContentDB.Name = "chckContentDB"
+    $chckContentDB.Checked = $true
+    $chckContentDB.Text = "Content Databases"
+    $panelInformationArchitecture.Controls.Add($chckContentDB)
+    
+    $chckQuotaTemplates = New-Object System.Windows.Forms.CheckBox
+    $chckQuotaTemplates.Top = 30
+    $chckQuotaTemplates.AutoSize = $true;
+    $chckQuotaTemplates.Name = "chckQuotaTemplates"
+    $chckQuotaTemplates.Checked = $true
+    $chckQuotaTemplates.Text = "Quota Templates"
+    $panelInformationArchitecture.Controls.Add($chckQuotaTemplates);
+
+    $chckSiteCollection = New-Object System.Windows.Forms.CheckBox
+    $chckSiteCollection.Top = 60
+    $chckSiteCollection.AutoSize = $true;
+    $chckSiteCollection.Name = "chckSiteCollection"
+    $chckSiteCollection.Checked = $true
+    $chckSiteCollection.Text = "Site Collections (SPSite)"
+    $panelInformationArchitecture.Controls.Add($chckSiteCollection)
+
+    $chckSPWeb = New-Object System.Windows.Forms.CheckBox
+    $chckSPWeb.Top = 90
+    $chckSPWeb.AutoSize = $true;
+    $chckSPWeb.Name = "chckSPWeb"
+    $chckSPWeb.Checked = $false
+    $chckSPWeb.Text = "Subsites (SPWeb)"
+    $panelInformationArchitecture.Controls.Add($chckSPWeb)
+
+    $form.Controls.Add($panelInformationArchitecture)
+    #endregion
+
+    #region Security
+    $labelSecurity = New-Object System.Windows.Forms.Label
+    $labelSecurity.Text = "Security:"
+    $labelSecurity.AutoSize = $true
+    $labelSecurity.Top = 190 + $topBannerHeight
+    $labelSecurity.Left = $firstColumnLeft
+    $labelSecurity.Font = [System.Drawing.Font]::new($labelSecurity.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSecurity)
+
+    $panelSecurity = New-Object System.Windows.Forms.Panel
+    $panelSecurity.Top = 240 + $topBannerHeight
+    $panelSecurity.Left = $firstColumnLeft
+    $panelSecurity.AutoSize = $true
+    $panelSecurity.Width = 400
+    $panelSecurity.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckFarmAdmin = New-Object System.Windows.Forms.CheckBox
+    $chckFarmAdmin.Top = 0
+    $chckFarmAdmin.AutoSize = $true;
+    $chckFarmAdmin.Name = "chckFarmAdmin"
+    $chckFarmAdmin.Checked = $true
+    $chckFarmAdmin.Text = "Farm Administrators"
+    $panelSecurity.Controls.Add($chckFarmAdmin);
+
+    $chckManagedAccount = New-Object System.Windows.Forms.CheckBox
+    $chckManagedAccount.Top = 30
+    $chckManagedAccount.AutoSize = $true;
+    $chckManagedAccount.Name = "chckManagedAccount"
+    $chckManagedAccount.Checked = $true
+    $chckManagedAccount.Text = "Managed Accounts"
+    $panelSecurity.Controls.Add($chckManagedAccount);
+
+    $chckPasswordChange = New-Object System.Windows.Forms.CheckBox
+    $chckPasswordChange.Top = 60
+    $chckPasswordChange.AutoSize = $true;
+    $chckPasswordChange.Name = "chckPasswordChange"
+    $chckPasswordChange.Checked = $true
+    $chckPasswordChange.Text = "Password Change Settings"
+    $panelSecurity.Controls.Add($chckPasswordChange);
+
+    $chckRemoteTrust = New-Object System.Windows.Forms.CheckBox
+    $chckRemoteTrust.Top = 90
+    $chckRemoteTrust.AutoSize = $true;
+    $chckRemoteTrust.Name = "chckRemoteTrust"
+    $chckRemoteTrust.Checked = $true
+    $chckRemoteTrust.Text = "Remote Farm Trust"
+    $panelSecurity.Controls.Add($chckRemoteTrust);
+
+    $chckSASecurity = New-Object System.Windows.Forms.CheckBox
+    $chckSASecurity.Top = 120
+    $chckSASecurity.AutoSize = $true;
+    $chckSASecurity.Name = "chckSASecurity"
+    $chckSASecurity.Checked = $true
+    $chckSASecurity.Text = "Service Applications Security"
+    $panelSecurity.Controls.Add($chckSASecurity)
+
+    $chckTrustedIdentity = New-Object System.Windows.Forms.CheckBox
+    $chckTrustedIdentity.Top = 150
+    $chckTrustedIdentity.AutoSize = $true;
+    $chckTrustedIdentity.Name = "chckTrustedIdentity"
+    $chckTrustedIdentity.Checked = $true
+    $chckTrustedIdentity.Text = "Trusted Identity Token Issuer"
+    $panelSecurity.Controls.Add($chckTrustedIdentity);
+
+    $form.Controls.Add($panelSecurity)
+    #endregion
+
+    #region Service Applications
+    $labelSA = New-Object System.Windows.Forms.Label
+    $labelSA.Text = "Service Applications:"
+    $labelSA.AutoSize = $true
+    $labelSA.Top = 450 + $topBannerHeight
+    $labelSA.Left = $firstColumnLeft
+    $labelSA.Font = [System.Drawing.Font]::new($labelSA.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSA)
+
+    $panelSA = New-Object System.Windows.Forms.Panel
+    $panelSA.Top = 500 + $topBannerHeight
+    $panelSA.Left = $firstColumnLeft
+    $panelSA.AutoSize = $true
+    $panelSA.Width = 400
+    $panelSA.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckSAAccess = New-Object System.Windows.Forms.CheckBox
+    $chckSAAccess.Top = 0
+    $chckSAAccess.AutoSize = $true;
+    $chckSAAccess.Name = "chckSAAccess"
+    $chckSAAccess.Checked = $true
+    $chckSAAccess.Text = "Access Services"
+    $panelSA.Controls.Add($chckSAAccess);
+
+    $chckSAAccess2010 = New-Object System.Windows.Forms.CheckBox
+    $chckSAAccess2010.Top = 30
+    $chckSAAccess2010.AutoSize = $true;
+    $chckSAAccess2010.Name = "chckSAAccess2010"
+    $chckSAAccess2010.Checked = $true
+    $chckSAAccess2010.Text = "Access Services 2010"
+    $panelSA.Controls.Add($chckSAAccess2010);
+
+    $chckSAAppMan= New-Object System.Windows.Forms.CheckBox
+    $chckSAAppMan.Top = 60
+    $chckSAAppMan.AutoSize = $true;
+    $chckSAAppMan.Name = "chckSAAppMan"
+    $chckSAAppMan.Checked = $true
+    $chckSAAppMan.Text = "App Management"
+    $panelSA.Controls.Add($chckSAAppMan);
+
+    $chckSABCS = New-Object System.Windows.Forms.CheckBox
+    $chckSABCS.Top = 90
+    $chckSABCS.AutoSize = $true;
+    $chckSABCS.Name = "chckSABCS"
+    $chckSABCS.Checked = $true
+    $chckSABCS.Text = "Business Connectivity Services"
+    $panelSA.Controls.Add($chckSABCS);
+
+    $chckSAExcel = New-Object System.Windows.Forms.CheckBox
+    $chckSAExcel.Top = 120
+    $chckSAExcel.AutoSize = $true;
+    $chckSAExcel.Name = "chckSAExcel"
+    $chckSAExcel.Checked = $true
+    $chckSAExcel.Text = "Excel Services"
+    $panelSA.Controls.Add($chckSAExcel);
+
+    $chckSAMachine = New-Object System.Windows.Forms.CheckBox
+    $chckSAMachine.Top = 150
+    $chckSAMachine.AutoSize = $true;
+    $chckSAMachine.Name = "chckSAMachine"
+    $chckSAMachine.Checked = $true
+    $chckSAMachine.Text = "Machine Translation"
+    $panelSA.Controls.Add($chckSAMachine);
+
+    $chckSAMMS = New-Object System.Windows.Forms.CheckBox
+    $chckSAMMS.Top = 180
+    $chckSAMMS.AutoSize = $true;
+    $chckSAMMS.Name = "chckSAMMS"
+    $chckSAMMS.Checked = $true
+    $chckSAMMS.Text = "Managed Metadata"
+    $panelSA.Controls.Add($chckSAMMS);
+
+    $chckSAPerformance = New-Object System.Windows.Forms.CheckBox
+    $chckSAPerformance.Top = 210
+    $chckSAPerformance.AutoSize = $true;
+    $chckSAPerformance.Name = "chckSAWord"
+    $chckSAPerformance.Checked = $true
+    $chckSAPerformance.Text = "PerformancePoint"
+    $panelSA.Controls.Add($chckSAPerformance);
+
+    $chckSAPublish = New-Object System.Windows.Forms.CheckBox
+    $chckSAPublish.Top = 240
+    $chckSAPublish.AutoSize = $true;
+    $chckSAPublish.Name = "chckSAPublish"
+    $chckSAPublish.Checked = $true
+    $chckSAPublish.Text = "Publish"
+    $panelSA.Controls.Add($chckSAPublish);
+
+    $chckSASecureStore = New-Object System.Windows.Forms.CheckBox
+    $chckSASecureStore.Top = 270
+    $chckSASecureStore.AutoSize = $true;
+    $chckSASecureStore.Name = "chckSASecureStore"
+    $chckSASecureStore.Checked = $true
+    $chckSASecureStore.Text = "Secure Store"
+    $panelSA.Controls.Add($chckSASecureStore);
+
+    $chckSAState = New-Object System.Windows.Forms.CheckBox
+    $chckSAState.Top = 300
+    $chckSAState.AutoSize = $true;
+    $chckSAState.Name = "chckSAState"
+    $chckSAState.Checked = $true
+    $chckSAState.Text = "State Service Application"
+    $panelSA.Controls.Add($chckSAState);
+
+    $chckSASub = New-Object System.Windows.Forms.CheckBox
+    $chckSASub.Top = 330
+    $chckSASub.AutoSize = $true;
+    $chckSASub.Name = "chckSASub"
+    $chckSASub.Checked = $true
+    $chckSASub.Text = "Subscription settings"
+    $panelSA.Controls.Add($chckSASub);
+
+    $chckSAUsage = New-Object System.Windows.Forms.CheckBox
+    $chckSAUsage.AutoSize = $true;
+    $chckSAUsage.Top = 360;
+    $chckSAUsage.Name = "chckSAUsage"
+    $chckSAUsage.Checked = $true
+    $chckSAUsage.Text = "Usage Service Application"
+    $panelSA.Controls.Add($chckSAUsage);
+
+    $chckSAVisio = New-Object System.Windows.Forms.CheckBox
+    $chckSAVisio.Top = 390
+    $chckSAVisio.AutoSize = $true;
+    $chckSAVisio.Name = "chckSAVisio"
+    $chckSAVisio.Checked = $true
+    $chckSAVisio.Text = "Visio Graphics"
+    $panelSA.Controls.Add($chckSAVisio);
+
+    $chckSAWord = New-Object System.Windows.Forms.CheckBox
+    $chckSAWord.Top = 420
+    $chckSAWord.AutoSize = $true;
+    $chckSAWord.Name = "chckSAWord"
+    $chckSAWord.Checked = $true
+    $chckSAWord.Text = "Word Automation"
+    $panelSA.Controls.Add($chckSAWord);
+
+    $chckSAWork = New-Object System.Windows.Forms.CheckBox
+    $chckSAWork.Top = 450
+    $chckSAWork.AutoSize = $true;
+    $chckSAWork.Name = "chckSAWork"
+    $chckSAWork.Checked = $true
+    $chckSAWork.Text = "Work Management"
+    $panelSA.Controls.Add($chckSAWork);
+
+    $form.Controls.Add($panelSA)
+    #endregion
+
+    #region Search
+    $labelSearch = New-Object System.Windows.Forms.Label
+    $labelSearch.Top = $topBannerHeight
+    $labelSearch.Text = "Search:"
+    $labelSearch.AutoSize = $true
+    $labelSearch.Left = $secondColumnLeft
+    $labelSearch.Font = [System.Drawing.Font]::new($labelSearch.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelSearch)
+
+    $panelSearch = New-Object System.Windows.Forms.Panel
+    $panelSearch.Top = 50 + $topBannerHeight
+    $panelSearch.Left = $secondColumnLeft
+    $panelSearch.AutoSize = $true
+    $panelSearch.Width = 400
+    $panelSearch.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckSearchContentSource = New-Object System.Windows.Forms.CheckBox
+    $chckSearchContentSource.Top = 0
+    $chckSearchContentSource.AutoSize = $true;
+    $chckSearchContentSource.Name = "chckSearchContentSource"
+    $chckSearchContentSource.Checked = $true
+    $chckSearchContentSource.Text = "Content Sources"
+    $panelSearch.Controls.Add($chckSearchContentSource);
+
+    $chckSearchCrawlRule = New-Object System.Windows.Forms.CheckBox
+    $chckSearchCrawlRule.Top = 30
+    $chckSearchCrawlRule.AutoSize = $true;
+    $chckSearchCrawlRule.Name = "chckSearchCrawlRule"
+    $chckSearchCrawlRule.Checked = $true
+    $chckSearchCrawlRule.Text = "Crawl Rules"
+    $panelSearch.Controls.Add($chckSearchCrawlRule);
+
+    $chckSearchCrawlerImpact = New-Object System.Windows.Forms.CheckBox
+    $chckSearchCrawlerImpact.Top = 60
+    $chckSearchCrawlerImpact.AutoSize = $true;
+    $chckSearchCrawlerImpact.Name = "chckSearchCrawlerImpact"
+    $chckSearchCrawlerImpact.Checked = $true
+    $chckSearchCrawlerImpact.Text = "Crawler Impact Rules"
+    $panelSearch.Controls.Add($chckSearchCrawlerImpact);
+
+    $chckSearchFileTypes = New-Object System.Windows.Forms.CheckBox
+    $chckSearchFileTypes.Top = 90
+    $chckSearchFileTypes.AutoSize = $true;
+    $chckSearchFileTypes.Name = "chckSearchFileTypes"
+    $chckSearchFileTypes.Checked = $false
+    $chckSearchFileTypes.Text = "File Types"
+    $panelSearch.Controls.Add($chckSearchFileTypes);
+
+    $chckSearchIndexPart = New-Object System.Windows.Forms.CheckBox
+    $chckSearchIndexPart.Top = 120
+    $chckSearchIndexPart.AutoSize = $true;
+    $chckSearchIndexPart.Name = "chckSearchIndexPart"
+    $chckSearchIndexPart.Checked = $true
+    $chckSearchIndexPart.Text = "Index Partitions"
+    $panelSearch.Controls.Add($chckSearchIndexPart);
+
+    $chckManagedProp = New-Object System.Windows.Forms.CheckBox
+    $chckManagedProp.Top = 150
+    $chckManagedProp.AutoSize = $true;
+    $chckManagedProp.Name = "chckManagedProp"
+    $chckManagedProp.Checked = $false
+    $chckManagedProp.Text = "Managed Properties"
+    $panelSearch.Controls.Add($chckManagedProp);
+
+    $chckSearchResultSources = New-Object System.Windows.Forms.CheckBox
+    $chckSearchResultSources.Top = 180
+    $chckSearchResultSources.AutoSize = $true;
+    $chckSearchResultSources.Name = "chckSearchResultSources"
+    $chckSearchResultSources.Checked = $true
+    $chckSearchResultSources.Text = "Result Sources"
+    $panelSearch.Controls.Add($chckSearchResultSources);
+
+    $chckSearchSA = New-Object System.Windows.Forms.CheckBox
+    $chckSearchSA.Top = 210
+    $chckSearchSA.AutoSize = $true;
+    $chckSearchSA.Name = "chckSearchSA"
+    $chckSearchSA.Checked = $true
+    $chckSearchSA.Text = "Search Service Applications"
+    $panelSearch.Controls.Add($chckSearchSA);
+
+    $chckSearchTopo = New-Object System.Windows.Forms.CheckBox
+    $chckSearchTopo.Top = 240
+    $chckSearchTopo.AutoSize = $true
+    $chckSearchTopo.Name = "chckSearchTopo"
+    $chckSearchTopo.Checked = $true
+    $chckSearchTopo.Text = "Topology"
+    $panelSearch.Controls.Add($chckSearchTopo);
+
+    $form.Controls.Add($panelSearch)
+    #endregion
+
+    #region Web Applications
+    $labelWebApplications = New-Object System.Windows.Forms.Label
+    $labelWebApplications.Text = "Web Applications:"
+    $labelWebApplications.AutoSize = $true
+    $labelWebApplications.Top = 340 + $topBannerHeight
+    $labelWebApplications.Left = $secondColumnLeft
+    $labelWebApplications.Font = [System.Drawing.Font]::new($labelWebApplications.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelWebApplications)
+
+    $panelWebApp = New-Object System.Windows.Forms.Panel
+    $panelWebApp.Top = 400 + $topBannerHeight
+    $panelWebApp.Left = $secondColumnLeft
+    $panelWebApp.AutoSize = $true
+    $panelWebApp.Width = 400
+    $panelWebApp.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckWAAppDomain = New-Object System.Windows.Forms.CheckBox
+    $chckWAAppDomain.Top = 0
+    $chckWAAppDomain.AutoSize = $true;
+    $chckWAAppDomain.Name = "chckWAAppDomain"
+    $chckWAAppDomain.Checked = $true
+    $chckWAAppDomain.Text = "App Domain"
+    $panelWebApp.Controls.Add($chckWAAppDomain);
+
+    $chckWABlockedFiles = New-Object System.Windows.Forms.CheckBox
+    $chckWABlockedFiles.Top = 30
+    $chckWABlockedFiles.AutoSize = $true;
+    $chckWABlockedFiles.Name = "chckWABlockedFiles"
+    $chckWABlockedFiles.Checked = $true
+    $chckWABlockedFiles.Text = "Blocked File Types"
+    $panelWebApp.Controls.Add($chckWABlockedFiles);
+
+    $chckWAExtension = New-Object System.Windows.Forms.CheckBox
+    $chckWAExtension.Top = 60
+    $chckWAExtension.AutoSize = $true;
+    $chckWAExtension.Name = "chckWAExtension"
+    $chckWAExtension.Checked = $true
+    $chckWAExtension.Text = "Extensions"
+    $panelWebApp.Controls.Add($chckWAExtension);
+
+    $chckWAGeneral = New-Object System.Windows.Forms.CheckBox
+    $chckWAGeneral.Top = 90
+    $chckWAGeneral.AutoSize = $true;
+    $chckWAGeneral.Name = "chckWAGeneral"
+    $chckWAGeneral.Checked = $true
+    $chckWAGeneral.Text = "General Settings"
+    $panelWebApp.Controls.Add($chckWAGeneral);
+
+    $chckWebAppPerm = New-Object System.Windows.Forms.CheckBox
+    $chckWebAppPerm.Top = 120
+    $chckWebAppPerm.AutoSize = $true
+    $chckWebAppPerm.Name = "chckWebAppPerm"
+    $chckWebAppPerm.Checked = $true
+    $chckWebAppPerm.Text = "Permissions"
+    $panelWebApp.Controls.Add($chckWebAppPerm);
+
+    $chckWebAppPolicy = New-Object System.Windows.Forms.CheckBox
+    $chckWebAppPolicy.Top = 150
+    $chckWebAppPolicy.AutoSize = $true;
+    $chckWebAppPolicy.Name = "chckWebAppPolicy"
+    $chckWebAppPolicy.Checked = $true
+    $chckWebAppPolicy.Text = "Policies"
+    $panelWebApp.Controls.Add($chckWebAppPolicy);
+
+    $chckWAProxyGroup = New-Object System.Windows.Forms.CheckBox
+    $chckWAProxyGroup.Top = 180
+    $chckWAProxyGroup.AutoSize = $true;
+    $chckWAProxyGroup.Name = "chckWAProxyGroup"
+    $chckWAProxyGroup.Checked = $true
+    $chckWAProxyGroup.Text = "Proxy Groups"
+    $panelWebApp.Controls.Add($chckWAProxyGroup);
+
+    $chckWADeletion = New-Object System.Windows.Forms.CheckBox
+    $chckWADeletion.Top = 210
+    $chckWADeletion.AutoSize = $true;
+    $chckWADeletion.Name = "chckWADeletion"
+    $chckWADeletion.Checked = $true
+    $chckWADeletion.Text = "Site Usage and Deletion"
+    $panelWebApp.Controls.Add($chckWADeletion);
+
+    $chckWAThrottling = New-Object System.Windows.Forms.CheckBox
+    $chckWAThrottling.Top = 240
+    $chckWAThrottling.AutoSize = $true;
+    $chckWAThrottling.Name = "chckWAThrottling"
+    $chckWAThrottling.Checked = $true
+    $chckWAThrottling.Text = "Throttling Settings"
+    $panelWebApp.Controls.Add($chckWAThrottling);
+
+    $chckWebApp = New-Object System.Windows.Forms.CheckBox
+    $chckWebApp.Top = 270
+    $chckWebApp.AutoSize = $true;
+    $chckWebApp.Name = "chckWebApp"
+    $chckWebApp.Checked = $true
+    $chckWebApp.Text = "Web Applications"
+    $panelWebApp.Controls.Add($chckWebApp);
+
+    $chckWAWorkflow = New-Object System.Windows.Forms.CheckBox
+    $chckWAWorkflow.Top = 300
+    $chckWAWorkflow.AutoSize = $true;
+    $chckWAWorkflow.Name = "chckWAWorkflow"
+    $chckWAWorkflow.Checked = $true
+    $chckWAWorkflow.Text = "Workflow Settings"
+    $panelWebApp.Controls.Add($chckWAWorkflow);
+
+    $form.Controls.Add($panelWebApp)
+    #endregion
+
+    #region Customization
+    $labelCustomization = New-Object System.Windows.Forms.Label
+    $labelCustomization.Text = "Customization:"
+    $labelCustomization.AutoSize = $true
+    $labelCustomization.Top = 760 + $topBannerHeight
+    $labelCustomization.Left = $secondColumnLeft
+    $labelCustomization.Font = [System.Drawing.Font]::new($labelCustomization.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelCustomization)
+
+    $panelCustomization = New-Object System.Windows.Forms.Panel
+    $panelCustomization.Top = 830 + $topBannerHeight
+    $panelCustomization.Left = $secondColumnLeft
+    $panelCustomization.AutoSize = $true
+    $panelCustomization.Width = 400
+    $panelCustomization.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckAppCatalog = New-Object System.Windows.Forms.CheckBox
+    $chckAppCatalog.Top = 0
+    $chckAppCatalog.AutoSize = $true;
+    $chckAppCatalog.Name = "chckAppCatalog"
+    $chckAppCatalog.Checked = $true
+    $chckAppCatalog.Text = "App Catalog"
+    $panelCustomization.Controls.Add($chckAppCatalog);
+
+    $chckAppDomain = New-Object System.Windows.Forms.CheckBox
+    $chckAppDomain.Top = 30
+    $chckAppDomain.AutoSize = $true;
+    $chckAppDomain.Name = "chckAppDomain"
+    $chckAppDomain.Checked = $true
+    $chckAppDomain.Text = "App Domain"
+    $panelCustomization.Controls.Add($chckAppDomain);
+
+    $chckAppStore = New-Object System.Windows.Forms.CheckBox
+    $chckAppStore.Top = 60
+    $chckAppStore.AutoSize = $true
+    $chckAppStore.Name = "chckAppStore"
+    $chckAppStore.Checked = $true
+    $chckAppStore.Text = "App Store Settings"
+    $panelCustomization.Controls.Add($chckAppStore);
+
+    $chckFarmSolution = New-Object System.Windows.Forms.CheckBox
+    $chckFarmSolution.Top = 90
+    $chckFarmSolution.AutoSize = $true;
+    $chckFarmSolution.Name = "chckFarmSolution"
+    $chckFarmSolution.Checked = $true
+    $chckFarmSolution.Text = "Farm Solutions"
+    $panelCustomization.Controls.Add($chckFarmSolution);
+
+    $form.Controls.Add($panelCustomization)
+    #endregion
+
+    #region Configuration
+    $labelConfiguration = New-Object System.Windows.Forms.Label
+    $labelConfiguration.Text = "Configuration:"
+    $labelConfiguration.AutoSize = $true
+    $labelConfiguration.Top = 220 + $topBannerHeight
+    $labelConfiguration.Left = $thirdColumnLeft
+    $labelConfiguration.Font = [System.Drawing.Font]::new($labelConfiguration.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($labelConfiguration)
+
+    $panelConfig = New-Object System.Windows.Forms.Panel
+    $panelConfig.Top = 280 + $topBannerHeight
+    $panelConfig.Left = $thirdColumnLeft
+    $panelConfig.AutoSize = $true
+    $panelConfig.Width = 400
+    $panelConfig.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckAAM = New-Object System.Windows.Forms.CheckBox
+    $chckAAM.Top = 0
+    $chckAAM.AutoSize = $true;
+    $chckAAM.Name = "chckAAM"
+    $chckAAM.Checked = $true
+    $chckAAM.Text = "Alternate Access Mappings"
+    $panelConfig.Controls.Add($chckAAM);
+
+    $chckAlternateUrl = New-Object System.Windows.Forms.CheckBox
+    $chckAlternateUrl.Top = 30
+    $chckAlternateUrl.AutoSize = $true;
+    $chckAlternateUrl.Name = "chckAlternateUrl"
+    $chckAlternateUrl.Checked = $true
+    $chckAlternateUrl.Text = "Alternate URL"
+    $panelConfig.Controls.Add($chckAlternateUrl);
+
+    $chckAntivirus = New-Object System.Windows.Forms.CheckBox
+    $chckAntivirus.Top = 60
+    $chckAntivirus.AutoSize = $true;
+    $chckAntivirus.Name = "chckAntivirus"
+    $chckAntivirus.Checked = $true
+    $chckAntivirus.Text = "Antivirus Settings"
+    $panelConfig.Controls.Add($chckAntivirus);
+
+    $chckBlobCache = New-Object System.Windows.Forms.CheckBox
+    $chckBlobCache.Top = 90
+    $chckBlobCache.AutoSize = $true;
+    $chckBlobCache.Name = "chckBlobCache"
+    $chckBlobCache.Checked = $true
+    $chckBlobCache.Text = "Blob Cache Settings"
+    $panelConfig.Controls.Add($chckBlobCache);
+
+    $chckCacheAccounts = New-Object System.Windows.Forms.CheckBox
+    $chckCacheAccounts.Top = 120
+    $chckCacheAccounts.AutoSize = $true;
+    $chckCacheAccounts.Name = "chckCacheAccounts"
+    $chckCacheAccounts.Checked = $true
+    $chckCacheAccounts.Text = "Cache Accounts"
+    $panelConfig.Controls.Add($chckCacheAccounts);
+
+    $chckDiagLogging = New-Object System.Windows.Forms.CheckBox
+    $chckDiagLogging.Top = 150
+    $chckDiagLogging.AutoSize = $true;
+    $chckDiagLogging.Name = "chckDiagLogging"
+    $chckDiagLogging.Checked = $true
+    $chckDiagLogging.Text = "Diagnostic Logging"
+    $panelConfig.Controls.Add($chckDiagLogging);
+
+    $chckDistributedCache= New-Object System.Windows.Forms.CheckBox
+    $chckDistributedCache.Top = 180
+    $chckDistributedCache.AutoSize = $true;
+    $chckDistributedCache.Name = "chckDistributedCache"
+    $chckDistributedCache.Checked = $false
+    $chckDistributedCache.Text = "Distributed Cache Service"
+    $panelConfig.Controls.Add($chckDistributedCache);
+
+    $chckFarmConfig = New-Object System.Windows.Forms.CheckBox
+    $chckFarmConfig.Top = 210
+    $chckFarmConfig.AutoSize = $true;
+    $chckFarmConfig.Name = "chckFarmConfig"
+    $chckFarmConfig.Checked = $true
+    $chckFarmConfig.Text = "Farm Configuration"
+    $panelConfig.Controls.Add($chckFarmConfig);
+
+    $chckFarmPropBag = New-Object System.Windows.Forms.CheckBox
+    $chckFarmPropBag.Top = 240
+    $chckFarmPropBag.AutoSize = $true;
+    $chckFarmPropBag.Name = "chckFarmPropBag"
+    $chckFarmPropBag.Checked = $true
+    $chckFarmPropBag.Text = "Farm Property Bag"
+    $panelConfig.Controls.Add($chckFarmPropBag);
+
+    $chckFeature = New-Object System.Windows.Forms.CheckBox
+    $chckFeature.Top = 270
+    $chckFeature.AutoSize = $true;
+    $chckFeature.Name = "chckFeature"
+    $chckFeature.Checked = $false
+    $chckFeature.Text = "Features"
+    $panelConfig.Controls.Add($chckFeature);
+
+    $chckHealth = New-Object System.Windows.Forms.CheckBox
+    $chckHealth.Top = 300
+    $chckHealth.AutoSize = $true;
+    $chckHealth.Name = "chckHealth"
+    $chckHealth.Checked = $true
+    $chckHealth.Text = "Health Analyzer Rule States"
+    $panelConfig.Controls.Add($chckHealth);
+
+    $chckIRM = New-Object System.Windows.Forms.CheckBox
+    $chckIRM.Top = 330
+    $chckIRM.AutoSize = $true;
+    $chckIRM.Name = "chckIRM"
+    $chckIRM.Checked = $true
+    $chckIRM.Text = "Information Rights Management Settings"
+    $panelConfig.Controls.Add($chckIRM);
+
+    $chckManagedPaths = New-Object System.Windows.Forms.CheckBox
+    $chckManagedPaths.Top = 360
+    $chckManagedPaths.AutoSize = $true;
+    $chckManagedPaths.Name = "chckManagedPaths"
+    $chckManagedPaths.Checked = $true
+    $chckManagedPaths.Text = "Managed Paths"
+    $panelConfig.Controls.Add($chckManagedPaths);
+
+    $chckOOS = New-Object System.Windows.Forms.CheckBox
+    $chckOOS.Top = 390
+    $chckOOS.AutoSize = $true;
+    $chckOOS.Name = "chckOOS"
+    $chckOOS.Checked = $false
+    $chckOOS.Text = "Office Online Server Bindings"
+    $panelConfig.Controls.Add($chckOOS);
+
+    $chckOutgoingEmail = New-Object System.Windows.Forms.CheckBox
+    $chckOutgoingEmail.Top = 420
+    $chckOutgoingEmail.AutoSize = $true;
+    $chckOutgoingEmail.Name = "chckOutgoingEmail"
+    $chckOutgoingEmail.Checked = $true
+    $chckOutgoingEmail.Text = "Outgoing Email Settings"
+    $panelConfig.Controls.Add($chckOutgoingEmail);
+
+    $chckServiceAppPool = New-Object System.Windows.Forms.CheckBox
+    $chckServiceAppPool.Top = 450
+    $chckServiceAppPool.AutoSize = $true;
+    $chckServiceAppPool.Name = "chckServiceAppPool"
+    $chckServiceAppPool.Checked = $true
+    $chckServiceAppPool.Text = "Service Application Pools"
+    $panelConfig.Controls.Add($chckServiceAppPool);
+
+    $chckServiceInstance = New-Object System.Windows.Forms.CheckBox
+    $chckServiceInstance.Top = 480
+    $chckServiceInstance.AutoSize = $true;
+    $chckServiceInstance.Name = "chckServiceInstance"
+    $chckServiceInstance.Checked = $true
+    $chckServiceInstance.Text = "Service Instances"
+    $panelConfig.Controls.Add($chckServiceInstance);
+
+    $chckSessionState= New-Object System.Windows.Forms.CheckBox
+    $chckSessionState.Top = 510
+    $chckSessionState.AutoSize = $true;
+    $chckSessionState.Name = "chckSessionState"
+    $chckSessionState.Checked = $true
+    $chckSessionState.Text = "Session State Service"
+    $panelConfig.Controls.Add($chckSessionState);
+
+    $chckDatabaseAAG= New-Object System.Windows.Forms.CheckBox
+    $chckDatabaseAAG.Top = 540
+    $chckDatabaseAAG.AutoSize = $true;
+    $chckDatabaseAAG.Name = "chckDatabaseAAG"
+    $chckDatabaseAAG.Checked = $false
+    $chckDatabaseAAG.Text = "SQL Always On Availability Groups"
+    $panelConfig.Controls.Add($chckDatabaseAAG);
+
+    $chckTimerJob = New-Object System.Windows.Forms.CheckBox
+    $chckTimerJob.Top = 570
+    $chckTimerJob.AutoSize = $true;
+    $chckTimerJob.Name = "chckTimerJob"
+    $chckTimerJob.Checked = $false
+    $chckTimerJob.Text = "Timer Job States"
+    $panelConfig.Controls.Add($chckTimerJob);
+
+    $form.Controls.Add($panelConfig)
+    #endregion
+
+    #region User Profile Service
+    $lblUPS = New-Object System.Windows.Forms.Label
+    $lblUPS.Top = $topBannerHeight
+    $lblUPS.Text = "User Profile:"
+    $lblUPS.AutoSize = $true
+    $lblUPS.Left = $thirdColumnLeft
+    $lblUPS.Font = [System.Drawing.Font]::new($lblUPS.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
+    $form.Controls.Add($lblUPS)
+
+    $panelUPS = New-Object System.Windows.Forms.Panel
+    $panelUPS.Top = 50 + $topBannerHeight
+    $panelUPS.Left = $thirdColumnLeft
+    $panelUPS.AutoSize = $true
+    $panelUPS.Width = 400
+    $panelUPS.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+
+    $chckUPSProp = New-Object System.Windows.Forms.CheckBox
+    $chckUPSProp.Top = 0
+    $chckUPSProp.AutoSize = $true;
+    $chckUPSProp.Name = "chckManagedProp"
+    $chckUPSProp.Checked = $false
+    $chckUPSProp.Text = "Profile Properties"
+    $panelUPS.Controls.Add($chckUPSProp);
+
+    $chckUPSSection = New-Object System.Windows.Forms.CheckBox
+    $chckUPSSection.Top = 30
+    $chckUPSSection.AutoSize = $true
+    $chckUPSSection.Name = "chckUPSSection"
+    $chckUPSSection.Checked = $false
+    $chckUPSSection.Text = "Profile Sections"
+    $panelUPS.Controls.Add($chckUPSSection);
+
+    $chckUPSSync = New-Object System.Windows.Forms.CheckBox
+    $chckUPSSync.Top = 60
+    $chckUPSSync.AutoSize = $true;
+    $chckUPSSync.Name = "chckUPSSync"
+    $chckUPSSync.Checked = $true
+    $chckUPSSync.Text = "Synchronization Connections"
+    $panelUPS.Controls.Add($chckUPSSync);
+
+    $chckUPSA = New-Object System.Windows.Forms.CheckBox
+    $chckUPSA.Top = 90
+    $chckUPSA.AutoSize = $true;
+    $chckUPSA.Name = "chckUPSA"
+    $chckUPSA.Checked = $true
+    $chckUPSA.Text = "User Profile Service Applications"
+    $panelUPS.Controls.Add($chckUPSA);
+
+    $chckUPSPermissions = New-Object System.Windows.Forms.CheckBox
+    $chckUPSPermissions.Top = 120
+    $chckUPSPermissions.AutoSize = $true;
+    $chckUPSPermissions.Name = "chckUPSPermissions"
+    $chckUPSPermissions.Checked = $true
+    $chckUPSPermissions.Text = "User Profile Service Permissions"
+    $panelUPS.Controls.Add($chckUPSPermissions);
+
+    $form.Controls.Add($panelUPS)
+    #endregion
+
+    #region Extraction Modes
+    $liteComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckSearchIndexPart, $chckWAAppDomain, $chckSessionState, $chckSAUsage)
+    $defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckDatabaseAAG, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchFileTypes, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSProp, $chckUPSSection, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
+    #endregion
+
+    #region Top Menu
+    $panelMenu = New-Object System.Windows.Forms.Panel
+    $panelMenu.Height = $topBannerHeight
+    $panelMenu.Width = $form.width
+    $panelMenu.BackColor = [System.Drawing.Color]::Silver
+
+    $lblMode = New-Object System.Windows.Forms.Label
+    $lblMode.Top = 25
+    $lblMode.Text = "Extraction Modes:"
+    $lblMode.AutoSize = $true
+    $lblMode.Left = 20
+    $lblMode.Font = [System.Drawing.Font]::new($lblMode.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
+    $panelMenu.Controls.Add($lblMode)
+
+    $btnLite = New-Object System.Windows.Forms.Button
+    $btnLite.AutoSize = $true
+    $btnLite.Top = 20
+    $btnLite.Left = 220
+    $btnLite.Text = "Lite"
+    $btnLite.Add_Click({SelectComponentsForMode(1)})
+    $panelMenu.Controls.Add($btnLite);
+
+    $btnDefault = New-Object System.Windows.Forms.Button
+    $btnDefault.AutoSize = $true
+    $btnDefault.top = 20
+    $btnDefault.Left = 300
+    $btnDefault.Text = "Default"
+    $btnDefault.Add_Click({SelectComponentsForMode(2)})
+    $panelMenu.Controls.Add($btnDefault);
+
+    $btnFull = New-Object System.Windows.Forms.Button
+    $btnFull.AutoSize = $true
+    $btnFull.Top = 20
+    $btnFull.Left = 400
+    $btnFull.Text = "Full"
+    $btnFull.Add_Click({SelectComponentsForMode(3)})
+    $panelMenu.Controls.Add($btnFull);
+
+    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
+    $chckStandAlone.AutoSize = $true
+    $chckStandAlone.Top = 5
+    $chckStandAlone.Left = 650
+    $chckStandAlone.Text = "Standalone"
+    $panelMenu.Controls.Add($chckStandAlone)
+
+    $chckAzure = New-Object System.Windows.Forms.CheckBox
+    $chckAzure.AutoSize = $true
+    $chckAzure.Top = 35
+    $chckAzure.Left = 650
+    $chckAzure.Text = "Azure"
+    $panelMenu.Controls.Add($chckAzure)
+
+    $btnClear = New-Object System.Windows.Forms.Button
+    $btnClear.AutoSize = $true
+    $btnClear.Top = 20
+    $btnClear.Left = 500
+    $btnClear.BackColor = [System.Drawing.Color]::IndianRed
+    $btnClear.ForeColor = [System.Drawing.Color]::White
+    $btnClear.Text = "Unselect All"
+    $btnClear.Add_Click({SelectComponentsForMode(0)})
+    $panelMenu.Controls.Add($btnClear);
+
+    $lblFarmAccount = New-Object System.Windows.Forms.Label
+    $lblFarmAccount.Text = "Farm Account:"
+    $lblFarmAccount.Top = 5
+    $lblFarmAccount.Left = 800
+    $lblFarmAccount.AutoSize = $true
+    $lblFarmAccount.Font = [System.Drawing.Font]::new($lblFarmAccount.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
+    $panelMenu.Controls.Add($lblFarmAccount)
+
+    $txtFarmAccount = New-Object System.Windows.Forms.Textbox
+    $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
+    $txtFarmAccount.Top = 35
+    $txtFarmAccount.Left = 830
+    $txtFarmAccount.Width = 200
+    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 12)
+    $panelMenu.Controls.Add($txtFarmAccount)
+
+    $lblPassword = New-Object System.Windows.Forms.Label
+    $lblPassword.Text = "Password:"
+    $lblPassword.Top = 5
+    $lblPassword.Left = 1050
+    $lblPassword.AutoSize = $true
+    $lblPassword.Font = [System.Drawing.Font]::new($lblPassword.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
+    $panelMenu.Controls.Add($lblPassword)
+
+    $btnExtract = New-Object System.Windows.Forms.Button
+    $btnExtract.Width = 178
+    $btnExtract.Height = 70
+    $btnExtract.Top = 0
+    $btnExtract.Left = 1300
+    $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
+    $btnExtract.ForeColor = [System.Drawing.Color]::White
+    $btnExtract.Text = "Start Extraction"
+    $btnExtract.Add_Click({
+        if($txtPassword.Text.Length -gt 0)
+        {
+            $form.Hide();
+            Get-SPReverseDSC;
+        }
+        else
+        {
+            [System.Windows.Forms.MessageBox]::Show("Please provide a password for the Farm Account")
+        }
+    })
+    $panelMenu.Controls.Add($btnExtract);
+
+
+    $txtPassword = New-Object System.Windows.Forms.Textbox
+    $txtPassword.Top = 35
+    $txtPassword.Left = 1080
+    $txtPassword.Width = 200
+    $txtPassword.PasswordChar = "*"
+    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
+    $txtPassword.Add_KeyDown({
+        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
+        {
+            $btnExtract.PerformClick()
+        }
+    })
+    $panelMenu.Controls.Add($txtPassword)
+
+    $form.Controls.Add($panelMenu);
+    #endregion
+
+    $form.Text = "ReverseDSC for SharePoint - v2.6.0.0"
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    $form.ShowDialog()
+}
+#endregion
+
 Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
 $sharePointSnapin = Get-PSSnapin | Where-Object{$_.Name -eq "Microsoft.SharePoint.PowerShell"}
 if($null -ne $sharePointSnapin)
 {
-    Get-SPReverseDSC
+    if($quiet)
+    {
+        Get-SPReverseDSC
+    }
+    else
+    {
+        [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
+        DisplayGUI
+    }
 }
 else
 {
