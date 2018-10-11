@@ -189,6 +189,55 @@ function Orchestrator
                 }
             }
 
+            #region SPServiceInstance
+            if($Quiet -or $chckServiceInstance.Checked)
+            {
+                Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                if(!$Standalone -and !$nodeLoopDone)
+                {
+                    Read-SPServiceInstance -Servers @($spServer.Name)
+
+                    $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                    $Script:dscConfigContent += "            {`r`n"
+                    $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                    $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                    $Script:dscConfigContent += "            }`r`n"
+                    $Script:dscConfigContent += "        }`r`n"
+                }
+                else
+                {
+                    $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
+
+                    $serverAddresses = @()
+                    foreach($server in $servers)
+                    {
+                        $serverAddresses += $server.Address
+                    }
+                    if(!$serviceLoopDone)
+                    {
+                        Read-SPServiceInstance -Servers $serverAddresses
+                    
+                        $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
+                        $Script:dscConfigContent += "        {`r`n"
+                        $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
+                        $Script:dscConfigContent += "            {`r`n"
+                        $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
+                        $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
+
+                        $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+
+                        $Script:dscConfigContent += "            }`r`n"
+                        $Script:dscConfigContent += "        }`r`n"
+                    }
+                }
+            }
+            #endregion
+
             if($serverNumber -eq 1)
             {
                 if($Quiet -or $chckManagedAccount.Checked)
@@ -642,53 +691,6 @@ function Orchestrator
                 }
             }
 
-            if($Quiet -or $chckServiceInstance.Checked)
-            {
-                Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                if(!$Standalone -and !$nodeLoopDone)
-                {
-                    Read-SPServiceInstance -Servers @($spServer.Name)
-
-                    $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-                    $Script:dscConfigContent += "            {`r`n"
-                    $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-                    $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-
-                    $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
-                    $Script:dscConfigContent += "            }`r`n"
-                    $Script:dscConfigContent += "        }`r`n"
-                }
-                else
-                {
-                    $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
-
-                    $serverAddresses = @()
-                    foreach($server in $servers)
-                    {
-                        $serverAddresses += $server.Address
-                    }
-                    if(!$serviceLoopDone)
-                    {
-                        Read-SPServiceInstance -Servers $serverAddresses
-                    
-                        $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
-                        $Script:dscConfigContent += "        {`r`n"
-                        $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
-                        $Script:dscConfigContent += "            {`r`n"
-                        $Script:dscConfigContent += "                Name = `$ServiceInstance.Name;`r`n"
-                        $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
-
-                        $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
-                        $Script:dscConfigContent += "            }`r`n"
-                        $Script:dscConfigContent += "        }`r`n"
-                    }
-                }
-            }
-            
             Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
             if($serverNumber -eq 1 -or !$nodeLoopDone)
             {
@@ -1026,7 +1028,7 @@ function Read-SPFarm (){
     $Script:dscConfigContent += "        }`r`n"
 
     <# SPFarm Feature Section #>
-    if($Script:ExtractionModeValue -eq 3)
+    if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
     {
         $versionFilter = $spMajorVersion.ToString() + "*"
         $farmFeatures = Get-SPFeature | Where-Object{$_.Scope -eq "Farm" -and $_.Version -like $versionFilter}
@@ -1119,6 +1121,13 @@ function Read-SPWebApplications (){
             {
                 $results.Remove("Port")
             }
+            elseif($result.Port){
+                $results.Port = 80
+            }
+            else
+            {
+                $results.Add("Port", 80)
+            }
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             if($convertToVariable)
             {
@@ -1135,7 +1144,7 @@ function Read-SPWebApplications (){
             }
 
             <# SPWebApplication Feature Section #>
-            if($Script:ExtractionModeValue -eq 3)
+            if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
             {
                 $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                 $versionFilter = $spMajorVersion.ToString() + "*"
@@ -1514,7 +1523,7 @@ function Read-SPSitesAndWebs ()
                             $Script:dscConfigContent += "        }`r`n"
 
                             <# SPWeb Feature Section #>
-                            if($Script:ExtractionModeValue -eq 3)
+                            if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
                             {
                                 $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                                 $versionFilter = $spMajorVersion.ToString() + "*"
@@ -1566,7 +1575,7 @@ function Read-SPSitesAndWebs ()
                     }
                 }
                 <# SPSite Feature Section #>
-                if($Script:ExtractionModeValue -eq 3)
+                if(($Script:ExtractionModeValue -eq 3 -and $Quiet) -or $chckFeature.Checked)
                 {
                     $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
                     $versionFilter = $spMajorVersion.ToString() + "*"
@@ -3603,7 +3612,7 @@ function Read-SPSearchTopology()
 
                 if($results.FirstPartitionDirectory.Length -gt 1)
                 {
-                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory
+                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
                 }
 
                 $results = Repair-Credentials -results $results
@@ -4265,7 +4274,13 @@ function Read-SPWebAppGeneralSettings()
         $params.Url = $webApp.Url
         $Script:dscConfigContent += "        SPWebAppGeneralSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
+
         $results = Get-TargetResource @params
+
+        if($results.DefaultQuotaTemplate -eq "No Quota" -or $results.DefaultQuotaTemplate -eq "")
+        {
+            $results.Remove("DefaultQuotaTemplate")
+        }
 
         $results = Repair-Credentials -results $results
         if($results.TimeZone -eq -1 -or $null -eq $results.TimeZone)
@@ -4448,6 +4463,24 @@ function Read-SPUserProfileProperty()
                     $params.UserProfileService = $userProfileServiceApp[0].DisplayName
                     $Script:dscConfigContent += "        SPUserProfileProperty " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
+
+                    <# Cleanup empty properties #>
+                    try {
+                        foreach($param in $params)
+                        {
+                            if($param -eq "")
+                            {
+                                $params.Remove($param)
+                            }
+                        }
+                    }
+                    catch
+                    { }
+
+                    if($params.MappingConnectionName -eq "*")
+                    {
+                        $params.Remove("MappingConnectionName")
+                    }
                     $results = Get-TargetResource @params
 
                     <# WA - Bug in SPDSC 1.7.0.0 where param returned is named UserProfileServiceAppName instead of
@@ -5934,7 +5967,7 @@ function DisplayGUI()
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
     $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
-    $btnExtract.Add_Click({Get-SPReverseDSC})
+    $btnExtract.Add_Click({$form.Hide();Get-SPReverseDSC})
     $panelMenu.Controls.Add($btnExtract);
 
     $form.Controls.Add($panelMenu);
@@ -5955,6 +5988,7 @@ if($null -ne $sharePointSnapin)
     }
     else
     {
+        [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
         DisplayGUI
     }
 }
