@@ -59,7 +59,7 @@ if($Mode.ToLower() -eq "lite")
 {
     $Script:ExtractionModeValue = 1
 }
-elseif($Mode.ToLower() -eq "full" -or !$Quiet)
+elseif($Mode.ToLower() -eq "full")
 {
     $Script:ExtractionModeValue = 3
 }
@@ -92,6 +92,16 @@ function Orchestrator
     $Script:spCentralAdmin = Get-SPWebApplication -IncludeCentralAdministration | Where-Object{$_.DisplayName -like '*Central Administration*'}
     $spFarm = Get-SPFarm
     $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
+
+    if($chckStandAlone.Checked)
+    {
+        $Standalone = $true
+    }
+    else
+    {
+        $Standalone = $false
+    }
+
     if($Standalone)
     {
         $i = 0;
@@ -120,7 +130,7 @@ function Orchestrator
     {
         $Script:configName = "SPStandalone"
     }
-    if($Script:ExtractionModeValue -eq 3)
+    elseif($Script:ExtractionModeValue -eq 3)
     {
         $Script:configName += "-Full"
     }
@@ -5949,6 +5959,13 @@ function DisplayGUI()
     $btnFull.Text = "Full"
     $btnFull.Add_Click({SelectComponentsForMode(3)})
     $panelMenu.Controls.Add($btnFull);
+
+    $chckStandAlone = NEw-Object System.Windows.Forms.CheckBox
+    $chckStandAlone.AutoSize = $true
+    $chckStandAlone.Top = 20
+    $chckStandAlone.Left = 900
+    $chckStandAlone.Text = "Standalone"
+    $panelMenu.Controls.Add($chckStandAlone)
 
     $btnClear = New-Object System.Windows.Forms.Button
     $btnClear.AutoSize = $true
