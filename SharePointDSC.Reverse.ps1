@@ -83,7 +83,15 @@ function Orchestrator
     Test-Prerequisites
     Import-Module -Name "ReverseDSC" -Force
 
-    $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+    if($Quiet)
+    {
+        $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+    }
+    else
+    {
+        $password = ConvertTo-SecureString $txtPassword.Text -AsPlainText -Force
+        $Global:spFarmAccount = New-Object System.Management.Automation.PSCredential ($txtFarmAccount.Text, $password)
+    }
     Save-Credentials $Global:spFarmAccount.UserName
 
     # Add the Install Account for the User Profile Service Sync;
@@ -1822,7 +1830,6 @@ function Read-SPServiceInstance($Servers)
                 if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
                 {
                     $servicesMasterList += $serviceTypeName
-                    Write-Verbose $serviceTypeName
                     if($serviceTypeName -eq "SPDistributedCacheServiceInstance")
                     {
                         # Do Nothing - This is handled by its own call later on.
@@ -3664,17 +3671,19 @@ function Read-SPSearchResultSource()
                 $resultSources = $fedman.ListSources($filter,$true)
 
                 $j = 1
+                $totalRS = $resultSources.Count
                 foreach($resultSource in $resultSources)
                 {
                     <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
                     if($resultSource.Name -ne "Local SharePoint Graph")
                     {
                         $rsName = $resultSource.Name
-                        Write-Host "    -> Scanning Results Source [$j] {$rsName}"
+                        Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
                         $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
                         $Script:dscConfigContent += "        {`r`n"
                         $params.SearchServiceAppName = $serviceName
                         $params.Name = $rsName
+                        $params.Remove("ScopeUrl")
                         $results = Get-TargetResource @params
 
                         $providers = $fedman.ListProviders()
@@ -3721,25 +3730,32 @@ function Read-SPSearchResultSource()
                                         
                                     foreach($source in $sources)
                                     {
+                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                        $Script:dscConfigContent += "        {`r`n"
+                                        $params.SearchServiceAppName = $serviceName
+                                        $params.Name = $source.Name
+                                        $params.ScopeUrl = $web.Url
+                                        $results = Get-TargetResource @params
+
                                         $providers = $fedman.ListProviders()
                                         $provider = $providers.Values | Where-Object -FilterScript {
                                             $_.Id -eq $source.ProviderId 
                                         }
 
-                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                        $Script:dscConfigContent += "        {`r`n"
-                                        $Script:dscConfigContent += "            Name                 = `"" + $source.Name + "`"`r`n"
-                                        $Script:dscConfigContent += "            SearchServiceAppName = `"" + $serviceName + "`"`r`n"
-                                        $Script:dscConfigContent += "            Query                = `"" + $source.QueryTransform.QueryTemplate + "`"`r`n"
-                                        $Script:dscConfigContent += "            ProviderType         = `"" + $provider.Name + "`"`r`n"
-
+                                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                                        {
+                                            $results.Remove("ConnectionUrl")
+                                        }
+                                        $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
+                                        $results.ProviderType = $provider.Name
+                                        $results.Ensure = "Present"
                                         if($source.ConnectionUrlTemplate)
                                         {
-                                            $Script:dscConfigContent += "            ConnectionUrl         = `"" + $source.ConnectionUrlTemplate + "`"`r`n"
+                                            $results.ConnectionUrl = $source.ConnectionUrlTemplate
                                         }
 
-                                        $Script:dscConfigContent += "            Ensure               = `"Present`"`r`n"
-                                        $Script:dscConfigContent += "            PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
+                                        $results = Repair-Credentials -results $results
+                                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                                         $Script:dscConfigContent += "        }`r`n"
                                     }
 
@@ -3996,10 +4012,13 @@ function Read-SPFarmSolution()
     $params = Get-DSCFakeParameters -ModulePath $module
     $solutions = Get-SPSolution
 
+    $i = 1
+    $total = $solutions.Length
     foreach($solution in $solutions)
     {
         try
         {
+            Write-Host "Scanning Solution [$i/$total] {$($solution.Name)}"
             $Script:dscConfigContent += "        SPFarmSolution " + [System.Guid]::NewGuid().ToString() + "`r`n"
             $Script:dscConfigContent += "        {`r`n"
             $params.Name = $solution.Name
@@ -4024,6 +4043,7 @@ function Read-SPFarmSolution()
             $Script:ErrorLog += "[Farm Solution]" + $solution.Name + "`r`n"
             $Script:ErrorLog += "$_`r`n`r`n"
         }
+        $i++
     }
 }
 
@@ -5964,37 +5984,88 @@ function DisplayGUI()
     $btnFull.Add_Click({SelectComponentsForMode(3)})
     $panelMenu.Controls.Add($btnFull);
 
-    $chckStandAlone = NEw-Object System.Windows.Forms.CheckBox
+    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
     $chckStandAlone.AutoSize = $true
-    $chckStandAlone.Top = 20
-    $chckStandAlone.Left = 900
+    $chckStandAlone.Top = 23
+    $chckStandAlone.Left = 650
     $chckStandAlone.Text = "Standalone"
     $panelMenu.Controls.Add($chckStandAlone)
 
     $btnClear = New-Object System.Windows.Forms.Button
     $btnClear.AutoSize = $true
     $btnClear.Top = 20
-    $btnClear.Left = 700
+    $btnClear.Left = 500
     $btnClear.BackColor = [System.Drawing.Color]::IndianRed
     $btnClear.ForeColor = [System.Drawing.Color]::White
     $btnClear.Text = "Unselect All"
     $btnClear.Add_Click({SelectComponentsForMode(0)})
     $panelMenu.Controls.Add($btnClear);
 
+    $lblFarmAccount = New-Object System.Windows.Forms.Label
+    $lblFarmAccount.Text = "Farm Account:"
+    $lblFarmAccount.Top = 5
+    $lblFarmAccount.Left = 800
+    $lblFarmAccount.AutoSize = $true
+    $lblFarmAccount.Font = [System.Drawing.Font]::new($lblFarmAccount.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
+    $panelMenu.Controls.Add($lblFarmAccount)
+
+    $txtFarmAccount = New-Object System.Windows.Forms.Textbox
+    $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
+    $txtFarmAccount.Top = 35
+    $txtFarmAccount.Left = 830
+    $txtFarmAccount.Width = 200
+    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 12)
+    $panelMenu.Controls.Add($txtFarmAccount)
+
+    $lblPassword = New-Object System.Windows.Forms.Label
+    $lblPassword.Text = "Password:"
+    $lblPassword.Top = 5
+    $lblPassword.Left = 1050
+    $lblPassword.AutoSize = $true
+    $lblPassword.Font = [System.Drawing.Font]::new($lblPassword.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
+    $panelMenu.Controls.Add($lblPassword)
+
     $btnExtract = New-Object System.Windows.Forms.Button
-    $btnExtract.AutoSize = $true
-    $btnExtract.Top = 20
-    $btnExtract.Left = 1200
+    $btnExtract.Width = 178
+    $btnExtract.Height = 70
+    $btnExtract.Top = 0
+    $btnExtract.Left = 1300
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
     $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
-    $btnExtract.Add_Click({$form.Hide();Get-SPReverseDSC})
+    $btnExtract.Add_Click({
+        if($txtPassword.Text.Length -gt 0)
+        {
+            $form.Hide();
+            Get-SPReverseDSC;
+        }
+        else
+        {
+            [System.Windows.Forms.MessageBox]::Show("Please provide a password for the Farm Account")
+        }
+    })
     $panelMenu.Controls.Add($btnExtract);
+
+
+    $txtPassword = New-Object System.Windows.Forms.Textbox
+    $txtPassword.Top = 35
+    $txtPassword.Left = 1080
+    $txtPassword.Width = 200
+    $txtPassword.PasswordChar = "*"
+    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
+    $txtPassword.Add_KeyDown({
+        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
+        {
+            $btnExtract.PerformClick()
+        }
+    })
+    $panelMenu.Controls.Add($txtPassword)
 
     $form.Controls.Add($panelMenu);
     #endregion
 
     $form.Text = "ReverseDSC for SharePoint - v2.6.0.0"
+    $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.ShowDialog()
 }
 #endregion
