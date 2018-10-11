@@ -4993,11 +4993,15 @@ function Get-SPReverseDSC()
 
     <## Prompts the user to specify the FOLDER path where the resulting PowerShell DSC Configuration Script will be saved. #>
     $fileName = "SPFarmConfig"
+    if($chckStandalone.Checked)
+    {
+        $Standalone = $true
+    }
     if($Standalone)
     {
         $fileName = "SPStandalone"
     }
-    if($Script:ExtractionModeValue -eq 3)
+    elseif($Script:ExtractionModeValue -eq 3)
     {
         $fileName += "-Full"
     }
