@@ -264,16 +264,16 @@ function Orchestrator
                     Read-SPManagedAccounts
                 }
 
-                if($Quiet -or $chckWebApp.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebApplications
-                }
-
                 if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPContentDatabase
+                }
+
+                if($Quiet -or $chckWebApp.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplications
                 }
 
                 if($Quiet -or $chckWebAppPerm.Checked)
@@ -6095,6 +6095,7 @@ if($null -ne $sharePointSnapin)
     else
     {
         [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
+        [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null
         DisplayGUI
     }
 }
