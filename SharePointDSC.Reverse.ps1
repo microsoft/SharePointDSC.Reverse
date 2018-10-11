@@ -5157,7 +5157,7 @@ function SelectComponentsForMode($mode){
     {
         $components = $defaultComponents
     }
-    foreach($panel in $form.Controls)
+    foreach($panel in $panelMain.Controls)
     {
         if($panel.GetType().ToString() -eq "System.Windows.Forms.Panel")
         {
@@ -5977,7 +5977,7 @@ function DisplayGUI()
     $panelMenu.Controls.Add($lblMode)
 
     $btnLite = New-Object System.Windows.Forms.Button
-    $btnLite.Width = 100
+    $btnLite.Width = 50
     $btnLite.Top = 20
     $btnLite.Left = 120
     $btnLite.Text = "Lite"
@@ -5985,68 +5985,84 @@ function DisplayGUI()
     $panelMenu.Controls.Add($btnLite);
 
     $btnDefault = New-Object System.Windows.Forms.Button
-    $btnDefault.Width = 100
+    $btnDefault.Width = 50
     $btnDefault.Top = 20
-    $btnDefault.Left = 220
+    $btnDefault.Left = 170
     $btnDefault.Text = "Default"
     $btnDefault.Add_Click({SelectComponentsForMode(2)})
     $panelMenu.Controls.Add($btnDefault);
 
     $btnFull = New-Object System.Windows.Forms.Button
-    $btnFull.Width = 100
+    $btnFull.Width = 50
     $btnFull.Top = 20
-    $btnFull.Left = 320
+    $btnFull.Left = 220
     $btnFull.Text = "Full"
     $btnFull.Add_Click({SelectComponentsForMode(3)})
     $panelMenu.Controls.Add($btnFull);
 
-    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
-    $chckStandAlone.AutoSize = $true
-    $chckStandAlone.Top = 5
-    $chckStandAlone.Left = 650
-    $chckStandAlone.Text = "Standalone"
-    $panelMenu.Controls.Add($chckStandAlone)
-
-    $chckAzure = New-Object System.Windows.Forms.CheckBox
-    $chckAzure.AutoSize = $true
-    $chckAzure.Top = 35
-    $chckAzure.Left = 650
-    $chckAzure.Text = "Azure"
-    $panelMenu.Controls.Add($chckAzure)
-
     $btnClear = New-Object System.Windows.Forms.Button
-    $btnClear.AutoSize = $true
+    $btnClear.Width = 90
     $btnClear.Top = 20
-    $btnClear.Left = 500
+    $btnClear.Left = 270
     $btnClear.BackColor = [System.Drawing.Color]::IndianRed
     $btnClear.ForeColor = [System.Drawing.Color]::White
     $btnClear.Text = "Unselect All"
     $btnClear.Add_Click({SelectComponentsForMode(0)})
     $panelMenu.Controls.Add($btnClear);
 
+    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
+    $chckStandAlone.Width = 90
+    $chckStandAlone.Top = 5
+    $chckStandAlone.Left = 370
+    $chckStandAlone.Text = "Standalone"
+    $panelMenu.Controls.Add($chckStandAlone)
+
+    $chckAzure = New-Object System.Windows.Forms.CheckBox
+    $chckAzure.Width = 90
+    $chckAzure.Top = 35
+    $chckAzure.Left = 370
+    $chckAzure.Text = "Azure"
+    $panelMenu.Controls.Add($chckAzure)
+
     $lblFarmAccount = New-Object System.Windows.Forms.Label
     $lblFarmAccount.Text = "Farm Account:"
-    $lblFarmAccount.Top = 5
-    $lblFarmAccount.Left = 800
-    $lblFarmAccount.AutoSize = $true
+    $lblFarmAccount.Top = 10
+    $lblFarmAccount.Left = 460
+    $lblFarmAccount.Width = 90
+    $lblFarmAccount.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblFarmAccount.Font = [System.Drawing.Font]::new($lblFarmAccount.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblFarmAccount)
 
     $txtFarmAccount = New-Object System.Windows.Forms.Textbox
     $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
-    $txtFarmAccount.Top = 35
-    $txtFarmAccount.Left = 830
+    $txtFarmAccount.Top = 5
+    $txtFarmAccount.Left = 550
     $txtFarmAccount.Width = 200
     $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 12)
     $panelMenu.Controls.Add($txtFarmAccount)
 
     $lblPassword = New-Object System.Windows.Forms.Label
     $lblPassword.Text = "Password:"
-    $lblPassword.Top = 5
-    $lblPassword.Left = 1050
-    $lblPassword.AutoSize = $true
+    $lblPassword.Top = 47
+    $lblPassword.Left = 460
+    $lblPassword.Width = 90
+    $lblPassword.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblPassword.Font = [System.Drawing.Font]::new($lblPassword.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblPassword)
+
+    $txtPassword = New-Object System.Windows.Forms.Textbox
+    $txtPassword.Top = 40
+    $txtPassword.Left = 550
+    $txtPassword.Width = 200
+    $txtPassword.PasswordChar = "*"
+    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
+    $txtPassword.Add_KeyDown({
+        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
+        {
+            $btnExtract.PerformClick()
+        }
+    })
+    $panelMenu.Controls.Add($txtPassword)
 
     $btnExtract = New-Object System.Windows.Forms.Button
     $btnExtract.Width = 178
@@ -6069,26 +6085,12 @@ function DisplayGUI()
     })
     $panelMenu.Controls.Add($btnExtract);
 
-    $txtPassword = New-Object System.Windows.Forms.Textbox
-    $txtPassword.Top = 35
-    $txtPassword.Left = 1080
-    $txtPassword.Width = 200
-    $txtPassword.PasswordChar = "*"
-    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
-    $txtPassword.Add_KeyDown({
-        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
-        {
-            $btnExtract.PerformClick()
-        }
-    })
-    $panelMenu.Controls.Add($txtPassword)
-
     $panelMain.Controls.Add($panelMenu);
     #endregion
 
     $panelMain.AutoScroll = $true
     $form.Controls.Add($panelMain)
-    $form.Text = "ReverseDSC for SharePoint - v2.6.0.0"
+    $form.Text = "ReverseDSC for SharePoint - v" + $Script:version
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.ShowDialog()
 }
