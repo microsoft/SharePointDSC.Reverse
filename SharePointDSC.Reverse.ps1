@@ -728,6 +728,10 @@ function Orchestrator
     Write-Host "Configuring Credentials..." -BackgroundColor DarkGreen -ForegroundColor White
     Set-ObtainRequiredCredentials
 
+    if($chckAzure.Checked)
+    {
+        $Azure = $true
+    }
     if(!$Azure)
     {
         $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
@@ -5082,6 +5086,9 @@ function Get-SPReverseDSC()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
     }
 
+    if($chckAzure.Checked){
+        $Azure = $true
+    }
     if(!$Azure)
     {
         $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
@@ -5120,7 +5127,7 @@ function Set-ObtainRequiredCredentials()
     {
         if(!$credential.ToLower().StartsWith("builtin"))
         {
-            if(!$Azure)
+            if(!$chckAzure.Checked)
             {
                 $credsContent += "    " + (Resolve-Credentials $credential) + " = Get-Credential -UserName `"" + $credential + "`" -Message `"Please provide credentials`"`r`n"
             }
@@ -5986,10 +5993,17 @@ function DisplayGUI()
 
     $chckStandAlone = New-Object System.Windows.Forms.CheckBox
     $chckStandAlone.AutoSize = $true
-    $chckStandAlone.Top = 23
+    $chckStandAlone.Top = 5
     $chckStandAlone.Left = 650
     $chckStandAlone.Text = "Standalone"
     $panelMenu.Controls.Add($chckStandAlone)
+
+    $chckAzure = New-Object System.Windows.Forms.CheckBox
+    $chckAzure.AutoSize = $true
+    $chckAzure.Top = 35
+    $chckAzure.Left = 650
+    $chckAzure.Text = "Azure"
+    $panelMenu.Controls.Add($chckAzure)
 
     $btnClear = New-Object System.Windows.Forms.Button
     $btnClear.AutoSize = $true
