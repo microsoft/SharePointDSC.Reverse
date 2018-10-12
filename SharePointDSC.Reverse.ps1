@@ -3187,15 +3187,15 @@ function Get-SPServiceAppSecurityMembers($member)
         $value = $userName
         if($userName)
         {
-            $value = (Resolve-Credentials -UserName $member.UserName) + ".UserName;"
+            $value = (Resolve-Credentials -UserName $member.UserName) + ".UserName"
         }
         else
         {
-            $value = $member.UserName
+            $value = "`"" + $member.UserName + "`";"
         }
         return "MSFT_SPServiceAppSecurityEntry { `
             Username    = `"" + $value + "`" `
-            AccessLevel = `"" + $member.AccessLevel + "`";`
+            AccessLevel = " + $member.AccessLevel + ";`
         }"
     }
     return $null
