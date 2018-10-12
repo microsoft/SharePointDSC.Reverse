@@ -47,6 +47,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
+$Global:AllUsers = @()
 $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
@@ -1477,6 +1478,10 @@ function Read-SPSitesAndWebs ()
                 $plainTextUser = $false;
                 if(!$ownerAlias)
                 {
+                    if(!$Global:AllUsers.Contains($results.OwnerAlias) -and $results.OwnerAlias -ne "")
+                    {
+                        $Global:AllUsers += $results.OwnerAlias
+                    }
                     $plainTextUser = $true
                     $ownerAlias = $results.OwnerAlias
                 }
@@ -1495,6 +1500,10 @@ function Read-SPSitesAndWebs ()
                     }
                     else
                     {
+                        if(!$Global:AllUsers.Contains($results.SecondaryOwnerAlias) -and $results.SecondaryOwnerAlias -ne "")
+                        {
+                            $Global:AllUsers += $results.SecondaryOwnerAlias
+                        }
                         $secondaryOwner = $results.SecondaryOwnerAlias
                     }
                 }
@@ -3682,35 +3691,41 @@ function Read-SPSearchResultSource()
                     <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
                     if($resultSource.Name -ne "Local SharePoint Graph")
                     {
-                        $rsName = $resultSource.Name
-                        Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
-                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                        $Script:dscConfigContent += "        {`r`n"
-                        $params.SearchServiceAppName = $serviceName
-                        $params.Name = $rsName
-                        $params.Remove("ScopeUrl")
-                        $results = Get-TargetResource @params
-
-                        $providers = $fedman.ListProviders()
-                        $provider = $providers.Values | Where-Object -FilterScript {
-                            $_.Id -eq $resultSource.ProviderId 
-                        }
-
-                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                        try
                         {
-                            $results.Remove("ConnectionUrl")
-                        }
-                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
-                        $results.ProviderType = $provider.Name
-                        $results.Ensure = "Present"
-                        if($resultSource.ConnectionUrlTemplate)
-                        {
-                            $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
-                        }
+                            
+                            $rsName = $resultSource.Name
+                            Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
+                            $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                            $currentContent += "        {`r`n"
+                            $params.SearchServiceAppName = $serviceName
+                            $params.Name = $rsName
+                            $params.Remove("ScopeUrl")
+                            $results = Get-TargetResource @params
 
-                        $results = Repair-Credentials -results $results
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                        $Script:dscConfigContent += "        }`r`n"
+                            $providers = $fedman.ListProviders()
+                            $provider = $providers.Values | Where-Object -FilterScript {
+                                $_.Id -eq $resultSource.ProviderId 
+                            }
+
+                            if($null -eq $results.Get_Item("ConnectionUrl"))
+                            {
+                                $results.Remove("ConnectionUrl")
+                            }
+                            $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
+                            $results.ProviderType = $provider.Name
+                            $results.Ensure = "Present"
+                            if($resultSource.ConnectionUrlTemplate)
+                            {
+                                $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
+                            }
+
+                            $results = Repair-Credentials -results $results
+                            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $currentContent += "        }`r`n"
+                            $Script:dscConfigContent += $currentContent
+                        }
+                        catch{}
                     }
                     $j++
                 }
@@ -3735,33 +3750,38 @@ function Read-SPSearchResultSource()
                                         
                                     foreach($source in $sources)
                                     {
-                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                        $Script:dscConfigContent += "        {`r`n"
-                                        $params.SearchServiceAppName = $serviceName
-                                        $params.Name = $source.Name
-                                        $params.ScopeUrl = $web.Url
-                                        $results = Get-TargetResource @params
-
-                                        $providers = $fedman.ListProviders()
-                                        $provider = $providers.Values | Where-Object -FilterScript {
-                                            $_.Id -eq $source.ProviderId 
-                                        }
-
-                                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                                        try
                                         {
-                                            $results.Remove("ConnectionUrl")
-                                        }
-                                        $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
-                                        $results.ProviderType = $provider.Name
-                                        $results.Ensure = "Present"
-                                        if($source.ConnectionUrlTemplate)
-                                        {
-                                            $results.ConnectionUrl = $source.ConnectionUrlTemplate
-                                        }
+                                            $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                            $currentContent += "        {`r`n"
+                                            $params.SearchServiceAppName = $serviceName
+                                            $params.Name = $source.Name
+                                            $params.ScopeUrl = $web.Url
+                                            $results = Get-TargetResource @params
 
-                                        $results = Repair-Credentials -results $results
-                                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                                        $Script:dscConfigContent += "        }`r`n"
+                                            $providers = $fedman.ListProviders()
+                                            $provider = $providers.Values | Where-Object -FilterScript {
+                                                $_.Id -eq $source.ProviderId 
+                                            }
+
+                                            if($null -eq $results.Get_Item("ConnectionUrl"))
+                                            {
+                                                $results.Remove("ConnectionUrl")
+                                            }
+                                            $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
+                                            $results.ProviderType = $provider.Name
+                                            $results.Ensure = "Present"
+                                            if($source.ConnectionUrlTemplate)
+                                            {
+                                                $results.ConnectionUrl = $source.ConnectionUrlTemplate
+                                            }
+
+                                            $results = Repair-Credentials -results $results
+                                            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                                            $currentContent += "        }`r`n"
+                                            $Script:dscConfigContent += $currentContent
+                                        }
+                                        catch{}
                                     }
 
                                     $web.Dispose()
@@ -3891,28 +3911,22 @@ function Read-SPSearchCrawlerImpactRule()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
-    foreach($ssa in $ssas)
+    $impactRules = Get-SPEnterpriseSearchSiteHitRule
+
+    foreach($crawlRule in $impactRules)
     {
         try
         {
-            if($null -ne $ssa)
-            {
-                $impactRules = Get-SPEnterpriseSearchSiteHitRule -SearchService $ssa
-
-                foreach($crawlRule in $impactRules)
-                {
-                    $Script:dscConfigContent += "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $params.ServiceAppName = $ssa.DisplayName
-                    $params.Path = $crawlRule.Path
-                    $params.Remove("CertificateName")
-                    $results = Get-TargetResource @params
-                    $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                    $Script:dscConfigContent += "        }`r`n"
-                }
-            }
+            $currentContent = "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $currentContent += "        {`r`n"
+            $params.ServiceAppName = $ssa.DisplayName
+            $params.Path = $crawlRule.Path
+            $params.Remove("CertificateName")
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentContent += "        }`r`n"
+            $Script:dscConfigContent += $currentContent
         }
         catch
         {
