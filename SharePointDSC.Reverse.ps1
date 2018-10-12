@@ -5189,8 +5189,8 @@ function DisplayGUI()
 {
     #region Global
     $firstColumnLeft = 10
-    $secondColumnLeft = 500
-    $thirdColumnLeft = 1000
+    $secondColumnLeft = 280
+    $thirdColumnLeft = 540
     $topBannerHeight = 70
     #endregion
 
@@ -5208,6 +5208,7 @@ function DisplayGUI()
 
     #region Information Architecture
     $labelInformationArchitecture = New-Object System.Windows.Forms.Label
+    $labelInformationArchitecture.Left = $firstColumnLeft
     $labelInformationArchitecture.Top = $topBannerHeight
     $labelInformationArchitecture.Text = "Information Architecture:"
     $labelInformationArchitecture.AutoSize = $true
@@ -5215,10 +5216,10 @@ function DisplayGUI()
     $panelMain.Controls.Add($labelInformationArchitecture)
 
     $panelInformationArchitecture = New-Object System.Windows.Forms.Panel
-    $panelInformationArchitecture.Top = 50 + $topBannerHeight
+    $panelInformationArchitecture.Top = 30 + $topBannerHeight
     $panelInformationArchitecture.Left = $firstColumnLeft
-    $panelInformationArchitecture.AutoSize = $true
-    $panelInformationArchitecture.Width = 400
+    $panelInformationArchitecture.Height = 80
+    $panelInformationArchitecture.Width = 220
     $panelInformationArchitecture.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     
     $chckContentDB = New-Object System.Windows.Forms.CheckBox
@@ -5230,7 +5231,7 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckContentDB)
     
     $chckQuotaTemplates = New-Object System.Windows.Forms.CheckBox
-    $chckQuotaTemplates.Top = 30
+    $chckQuotaTemplates.Top = 20
     $chckQuotaTemplates.AutoSize = $true;
     $chckQuotaTemplates.Name = "chckQuotaTemplates"
     $chckQuotaTemplates.Checked = $true
@@ -5238,7 +5239,7 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckQuotaTemplates);
 
     $chckSiteCollection = New-Object System.Windows.Forms.CheckBox
-    $chckSiteCollection.Top = 60
+    $chckSiteCollection.Top = 40
     $chckSiteCollection.AutoSize = $true;
     $chckSiteCollection.Name = "chckSiteCollection"
     $chckSiteCollection.Checked = $true
@@ -5246,7 +5247,7 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckSiteCollection)
 
     $chckSPWeb = New-Object System.Windows.Forms.CheckBox
-    $chckSPWeb.Top = 90
+    $chckSPWeb.Top = 60
     $chckSPWeb.AutoSize = $true;
     $chckSPWeb.Name = "chckSPWeb"
     $chckSPWeb.Checked = $false
@@ -5260,16 +5261,16 @@ function DisplayGUI()
     $labelSecurity = New-Object System.Windows.Forms.Label
     $labelSecurity.Text = "Security:"
     $labelSecurity.AutoSize = $true
-    $labelSecurity.Top = 190 + $topBannerHeight
+    $labelSecurity.Top = 120 + $topBannerHeight
     $labelSecurity.Left = $firstColumnLeft
     $labelSecurity.Font = [System.Drawing.Font]::new($labelSecurity.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($labelSecurity)
 
     $panelSecurity = New-Object System.Windows.Forms.Panel
-    $panelSecurity.Top = 240 + $topBannerHeight
+    $panelSecurity.Top = 150 + $topBannerHeight
     $panelSecurity.Left = $firstColumnLeft
     $panelSecurity.AutoSize = $true
-    $panelSecurity.Width = 400
+    $panelSecurity.Width = 220
     $panelSecurity.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckFarmAdmin = New-Object System.Windows.Forms.CheckBox
@@ -5281,7 +5282,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckFarmAdmin);
 
     $chckManagedAccount = New-Object System.Windows.Forms.CheckBox
-    $chckManagedAccount.Top = 30
+    $chckManagedAccount.Top = 20
     $chckManagedAccount.AutoSize = $true;
     $chckManagedAccount.Name = "chckManagedAccount"
     $chckManagedAccount.Checked = $true
@@ -5289,7 +5290,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckManagedAccount);
 
     $chckPasswordChange = New-Object System.Windows.Forms.CheckBox
-    $chckPasswordChange.Top = 60
+    $chckPasswordChange.Top = 40
     $chckPasswordChange.AutoSize = $true;
     $chckPasswordChange.Name = "chckPasswordChange"
     $chckPasswordChange.Checked = $true
@@ -5297,7 +5298,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckPasswordChange);
 
     $chckRemoteTrust = New-Object System.Windows.Forms.CheckBox
-    $chckRemoteTrust.Top = 90
+    $chckRemoteTrust.Top = 60
     $chckRemoteTrust.AutoSize = $true;
     $chckRemoteTrust.Name = "chckRemoteTrust"
     $chckRemoteTrust.Checked = $true
@@ -5305,7 +5306,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckRemoteTrust);
 
     $chckSASecurity = New-Object System.Windows.Forms.CheckBox
-    $chckSASecurity.Top = 120
+    $chckSASecurity.Top = 80
     $chckSASecurity.AutoSize = $true;
     $chckSASecurity.Name = "chckSASecurity"
     $chckSASecurity.Checked = $true
@@ -5313,7 +5314,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckSASecurity)
 
     $chckTrustedIdentity = New-Object System.Windows.Forms.CheckBox
-    $chckTrustedIdentity.Top = 150
+    $chckTrustedIdentity.Top = 100
     $chckTrustedIdentity.AutoSize = $true;
     $chckTrustedIdentity.Name = "chckTrustedIdentity"
     $chckTrustedIdentity.Checked = $true
@@ -5327,16 +5328,16 @@ function DisplayGUI()
     $labelSA = New-Object System.Windows.Forms.Label
     $labelSA.Text = "Service Applications:"
     $labelSA.AutoSize = $true
-    $labelSA.Top = 450 + $topBannerHeight
+    $labelSA.Top = 285 + $topBannerHeight
     $labelSA.Left = $firstColumnLeft
     $labelSA.Font = [System.Drawing.Font]::new($labelSA.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($labelSA)
 
     $panelSA = New-Object System.Windows.Forms.Panel
-    $panelSA.Top = 500 + $topBannerHeight
+    $panelSA.Top = 315 + $topBannerHeight
     $panelSA.Left = $firstColumnLeft
     $panelSA.AutoSize = $true
-    $panelSA.Width = 400
+    $panelSA.Width = 220
     $panelSA.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckSAAccess = New-Object System.Windows.Forms.CheckBox
@@ -5348,7 +5349,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAccess);
 
     $chckSAAccess2010 = New-Object System.Windows.Forms.CheckBox
-    $chckSAAccess2010.Top = 30
+    $chckSAAccess2010.Top = 20
     $chckSAAccess2010.AutoSize = $true;
     $chckSAAccess2010.Name = "chckSAAccess2010"
     $chckSAAccess2010.Checked = $true
@@ -5356,7 +5357,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAccess2010);
 
     $chckSAAppMan= New-Object System.Windows.Forms.CheckBox
-    $chckSAAppMan.Top = 60
+    $chckSAAppMan.Top = 40
     $chckSAAppMan.AutoSize = $true;
     $chckSAAppMan.Name = "chckSAAppMan"
     $chckSAAppMan.Checked = $true
@@ -5364,7 +5365,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAppMan);
 
     $chckSABCS = New-Object System.Windows.Forms.CheckBox
-    $chckSABCS.Top = 90
+    $chckSABCS.Top = 60
     $chckSABCS.AutoSize = $true;
     $chckSABCS.Name = "chckSABCS"
     $chckSABCS.Checked = $true
@@ -5372,7 +5373,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSABCS);
 
     $chckSAExcel = New-Object System.Windows.Forms.CheckBox
-    $chckSAExcel.Top = 120
+    $chckSAExcel.Top = 80
     $chckSAExcel.AutoSize = $true;
     $chckSAExcel.Name = "chckSAExcel"
     $chckSAExcel.Checked = $true
@@ -5380,7 +5381,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAExcel);
 
     $chckSAMachine = New-Object System.Windows.Forms.CheckBox
-    $chckSAMachine.Top = 150
+    $chckSAMachine.Top = 100
     $chckSAMachine.AutoSize = $true;
     $chckSAMachine.Name = "chckSAMachine"
     $chckSAMachine.Checked = $true
@@ -5388,7 +5389,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAMachine);
 
     $chckSAMMS = New-Object System.Windows.Forms.CheckBox
-    $chckSAMMS.Top = 180
+    $chckSAMMS.Top = 120
     $chckSAMMS.AutoSize = $true;
     $chckSAMMS.Name = "chckSAMMS"
     $chckSAMMS.Checked = $true
@@ -5396,7 +5397,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAMMS);
 
     $chckSAPerformance = New-Object System.Windows.Forms.CheckBox
-    $chckSAPerformance.Top = 210
+    $chckSAPerformance.Top = 140
     $chckSAPerformance.AutoSize = $true;
     $chckSAPerformance.Name = "chckSAWord"
     $chckSAPerformance.Checked = $true
@@ -5404,7 +5405,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAPerformance);
 
     $chckSAPublish = New-Object System.Windows.Forms.CheckBox
-    $chckSAPublish.Top = 240
+    $chckSAPublish.Top = 160
     $chckSAPublish.AutoSize = $true;
     $chckSAPublish.Name = "chckSAPublish"
     $chckSAPublish.Checked = $true
@@ -5412,7 +5413,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAPublish);
 
     $chckSASecureStore = New-Object System.Windows.Forms.CheckBox
-    $chckSASecureStore.Top = 270
+    $chckSASecureStore.Top = 180
     $chckSASecureStore.AutoSize = $true;
     $chckSASecureStore.Name = "chckSASecureStore"
     $chckSASecureStore.Checked = $true
@@ -5420,7 +5421,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSASecureStore);
 
     $chckSAState = New-Object System.Windows.Forms.CheckBox
-    $chckSAState.Top = 300
+    $chckSAState.Top = 200
     $chckSAState.AutoSize = $true;
     $chckSAState.Name = "chckSAState"
     $chckSAState.Checked = $true
@@ -5428,7 +5429,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAState);
 
     $chckSASub = New-Object System.Windows.Forms.CheckBox
-    $chckSASub.Top = 330
+    $chckSASub.Top = 220
     $chckSASub.AutoSize = $true;
     $chckSASub.Name = "chckSASub"
     $chckSASub.Checked = $true
@@ -5437,14 +5438,14 @@ function DisplayGUI()
 
     $chckSAUsage = New-Object System.Windows.Forms.CheckBox
     $chckSAUsage.AutoSize = $true;
-    $chckSAUsage.Top = 360;
+    $chckSAUsage.Top = 240;
     $chckSAUsage.Name = "chckSAUsage"
     $chckSAUsage.Checked = $true
     $chckSAUsage.Text = "Usage Service Application"
     $panelSA.Controls.Add($chckSAUsage);
 
     $chckSAVisio = New-Object System.Windows.Forms.CheckBox
-    $chckSAVisio.Top = 390
+    $chckSAVisio.Top = 260
     $chckSAVisio.AutoSize = $true;
     $chckSAVisio.Name = "chckSAVisio"
     $chckSAVisio.Checked = $true
@@ -5452,7 +5453,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAVisio);
 
     $chckSAWord = New-Object System.Windows.Forms.CheckBox
-    $chckSAWord.Top = 420
+    $chckSAWord.Top = 280
     $chckSAWord.AutoSize = $true;
     $chckSAWord.Name = "chckSAWord"
     $chckSAWord.Checked = $true
@@ -5460,7 +5461,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAWord);
 
     $chckSAWork = New-Object System.Windows.Forms.CheckBox
-    $chckSAWork.Top = 450
+    $chckSAWork.Top = 300
     $chckSAWork.AutoSize = $true;
     $chckSAWork.Name = "chckSAWork"
     $chckSAWork.Checked = $true
@@ -5480,10 +5481,10 @@ function DisplayGUI()
     $panelMain.Controls.Add($labelSearch)
 
     $panelSearch = New-Object System.Windows.Forms.Panel
-    $panelSearch.Top = 50 + $topBannerHeight
+    $panelSearch.Top = 30 + $topBannerHeight
     $panelSearch.Left = $secondColumnLeft
     $panelSearch.AutoSize = $true
-    $panelSearch.Width = 400
+    $panelSearch.Width = 220
     $panelSearch.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckSearchContentSource = New-Object System.Windows.Forms.CheckBox
@@ -5495,7 +5496,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchContentSource);
 
     $chckSearchCrawlRule = New-Object System.Windows.Forms.CheckBox
-    $chckSearchCrawlRule.Top = 30
+    $chckSearchCrawlRule.Top = 20
     $chckSearchCrawlRule.AutoSize = $true;
     $chckSearchCrawlRule.Name = "chckSearchCrawlRule"
     $chckSearchCrawlRule.Checked = $true
@@ -5503,7 +5504,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchCrawlRule);
 
     $chckSearchCrawlerImpact = New-Object System.Windows.Forms.CheckBox
-    $chckSearchCrawlerImpact.Top = 60
+    $chckSearchCrawlerImpact.Top = 40
     $chckSearchCrawlerImpact.AutoSize = $true;
     $chckSearchCrawlerImpact.Name = "chckSearchCrawlerImpact"
     $chckSearchCrawlerImpact.Checked = $true
@@ -5511,7 +5512,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchCrawlerImpact);
 
     $chckSearchFileTypes = New-Object System.Windows.Forms.CheckBox
-    $chckSearchFileTypes.Top = 90
+    $chckSearchFileTypes.Top = 60
     $chckSearchFileTypes.AutoSize = $true;
     $chckSearchFileTypes.Name = "chckSearchFileTypes"
     $chckSearchFileTypes.Checked = $false
@@ -5519,7 +5520,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchFileTypes);
 
     $chckSearchIndexPart = New-Object System.Windows.Forms.CheckBox
-    $chckSearchIndexPart.Top = 120
+    $chckSearchIndexPart.Top = 80
     $chckSearchIndexPart.AutoSize = $true;
     $chckSearchIndexPart.Name = "chckSearchIndexPart"
     $chckSearchIndexPart.Checked = $true
@@ -5527,7 +5528,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchIndexPart);
 
     $chckManagedProp = New-Object System.Windows.Forms.CheckBox
-    $chckManagedProp.Top = 150
+    $chckManagedProp.Top = 100
     $chckManagedProp.AutoSize = $true;
     $chckManagedProp.Name = "chckManagedProp"
     $chckManagedProp.Checked = $false
@@ -5535,7 +5536,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckManagedProp);
 
     $chckSearchResultSources = New-Object System.Windows.Forms.CheckBox
-    $chckSearchResultSources.Top = 180
+    $chckSearchResultSources.Top = 120
     $chckSearchResultSources.AutoSize = $true;
     $chckSearchResultSources.Name = "chckSearchResultSources"
     $chckSearchResultSources.Checked = $true
@@ -5543,7 +5544,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchResultSources);
 
     $chckSearchSA = New-Object System.Windows.Forms.CheckBox
-    $chckSearchSA.Top = 210
+    $chckSearchSA.Top = 140
     $chckSearchSA.AutoSize = $true;
     $chckSearchSA.Name = "chckSearchSA"
     $chckSearchSA.Checked = $true
@@ -5551,7 +5552,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchSA);
 
     $chckSearchTopo = New-Object System.Windows.Forms.CheckBox
-    $chckSearchTopo.Top = 240
+    $chckSearchTopo.Top = 160
     $chckSearchTopo.AutoSize = $true
     $chckSearchTopo.Name = "chckSearchTopo"
     $chckSearchTopo.Checked = $true
@@ -5565,16 +5566,16 @@ function DisplayGUI()
     $labelWebApplications = New-Object System.Windows.Forms.Label
     $labelWebApplications.Text = "Web Applications:"
     $labelWebApplications.AutoSize = $true
-    $labelWebApplications.Top = 340 + $topBannerHeight
+    $labelWebApplications.Top = $panelSearch.Height + $topBannerHeight + 40
     $labelWebApplications.Left = $secondColumnLeft
     $labelWebApplications.Font = [System.Drawing.Font]::new($labelWebApplications.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($labelWebApplications)
 
     $panelWebApp = New-Object System.Windows.Forms.Panel
-    $panelWebApp.Top = 400 + $topBannerHeight
+    $panelWebApp.Top = $panelSearch.Height + $topBannerHeight + 70
     $panelWebApp.Left = $secondColumnLeft
     $panelWebApp.AutoSize = $true
-    $panelWebApp.Width = 400
+    $panelWebApp.Width = 220
     $panelWebApp.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckWAAppDomain = New-Object System.Windows.Forms.CheckBox
@@ -5586,7 +5587,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAAppDomain);
 
     $chckWABlockedFiles = New-Object System.Windows.Forms.CheckBox
-    $chckWABlockedFiles.Top = 30
+    $chckWABlockedFiles.Top = 20
     $chckWABlockedFiles.AutoSize = $true;
     $chckWABlockedFiles.Name = "chckWABlockedFiles"
     $chckWABlockedFiles.Checked = $true
@@ -5594,7 +5595,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWABlockedFiles);
 
     $chckWAExtension = New-Object System.Windows.Forms.CheckBox
-    $chckWAExtension.Top = 60
+    $chckWAExtension.Top = 40
     $chckWAExtension.AutoSize = $true;
     $chckWAExtension.Name = "chckWAExtension"
     $chckWAExtension.Checked = $true
@@ -5602,7 +5603,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAExtension);
 
     $chckWAGeneral = New-Object System.Windows.Forms.CheckBox
-    $chckWAGeneral.Top = 90
+    $chckWAGeneral.Top = 60
     $chckWAGeneral.AutoSize = $true;
     $chckWAGeneral.Name = "chckWAGeneral"
     $chckWAGeneral.Checked = $true
@@ -5610,7 +5611,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAGeneral);
 
     $chckWebAppPerm = New-Object System.Windows.Forms.CheckBox
-    $chckWebAppPerm.Top = 120
+    $chckWebAppPerm.Top = 80
     $chckWebAppPerm.AutoSize = $true
     $chckWebAppPerm.Name = "chckWebAppPerm"
     $chckWebAppPerm.Checked = $true
@@ -5618,7 +5619,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebAppPerm);
 
     $chckWebAppPolicy = New-Object System.Windows.Forms.CheckBox
-    $chckWebAppPolicy.Top = 150
+    $chckWebAppPolicy.Top = 100
     $chckWebAppPolicy.AutoSize = $true;
     $chckWebAppPolicy.Name = "chckWebAppPolicy"
     $chckWebAppPolicy.Checked = $true
@@ -5626,7 +5627,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebAppPolicy);
 
     $chckWAProxyGroup = New-Object System.Windows.Forms.CheckBox
-    $chckWAProxyGroup.Top = 180
+    $chckWAProxyGroup.Top = 120
     $chckWAProxyGroup.AutoSize = $true;
     $chckWAProxyGroup.Name = "chckWAProxyGroup"
     $chckWAProxyGroup.Checked = $true
@@ -5634,7 +5635,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAProxyGroup);
 
     $chckWADeletion = New-Object System.Windows.Forms.CheckBox
-    $chckWADeletion.Top = 210
+    $chckWADeletion.Top = 140
     $chckWADeletion.AutoSize = $true;
     $chckWADeletion.Name = "chckWADeletion"
     $chckWADeletion.Checked = $true
@@ -5642,7 +5643,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWADeletion);
 
     $chckWAThrottling = New-Object System.Windows.Forms.CheckBox
-    $chckWAThrottling.Top = 240
+    $chckWAThrottling.Top = 160
     $chckWAThrottling.AutoSize = $true;
     $chckWAThrottling.Name = "chckWAThrottling"
     $chckWAThrottling.Checked = $true
@@ -5650,7 +5651,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAThrottling);
 
     $chckWebApp = New-Object System.Windows.Forms.CheckBox
-    $chckWebApp.Top = 270
+    $chckWebApp.Top = 180
     $chckWebApp.AutoSize = $true;
     $chckWebApp.Name = "chckWebApp"
     $chckWebApp.Checked = $true
@@ -5658,7 +5659,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebApp);
 
     $chckWAWorkflow = New-Object System.Windows.Forms.CheckBox
-    $chckWAWorkflow.Top = 300
+    $chckWAWorkflow.Top = 200
     $chckWAWorkflow.AutoSize = $true;
     $chckWAWorkflow.Name = "chckWAWorkflow"
     $chckWAWorkflow.Checked = $true
@@ -5672,16 +5673,16 @@ function DisplayGUI()
     $labelCustomization = New-Object System.Windows.Forms.Label
     $labelCustomization.Text = "Customization:"
     $labelCustomization.AutoSize = $true
-    $labelCustomization.Top = 760 + $topBannerHeight
+    $labelCustomization.Top = $panelWebApp.Top + $panelWebApp.Height + 10
     $labelCustomization.Left = $secondColumnLeft
     $labelCustomization.Font = [System.Drawing.Font]::new($labelCustomization.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($labelCustomization)
 
     $panelCustomization = New-Object System.Windows.Forms.Panel
-    $panelCustomization.Top = 830 + $topBannerHeight
+    $panelCustomization.Top = $panelWebApp.Top + $panelWebApp.Height + 40
     $panelCustomization.Left = $secondColumnLeft
-    $panelCustomization.AutoSize = $true
-    $panelCustomization.Width = 400
+    $panelCustomization.Height = 80
+    $panelCustomization.Width = 220
     $panelCustomization.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckAppCatalog = New-Object System.Windows.Forms.CheckBox
@@ -5693,7 +5694,7 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppCatalog);
 
     $chckAppDomain = New-Object System.Windows.Forms.CheckBox
-    $chckAppDomain.Top = 30
+    $chckAppDomain.Top = 20
     $chckAppDomain.AutoSize = $true;
     $chckAppDomain.Name = "chckAppDomain"
     $chckAppDomain.Checked = $true
@@ -5701,7 +5702,7 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppDomain);
 
     $chckAppStore = New-Object System.Windows.Forms.CheckBox
-    $chckAppStore.Top = 60
+    $chckAppStore.Top = 40
     $chckAppStore.AutoSize = $true
     $chckAppStore.Name = "chckAppStore"
     $chckAppStore.Checked = $true
@@ -5709,7 +5710,7 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppStore);
 
     $chckFarmSolution = New-Object System.Windows.Forms.CheckBox
-    $chckFarmSolution.Top = 90
+    $chckFarmSolution.Top = 60
     $chckFarmSolution.AutoSize = $true;
     $chckFarmSolution.Name = "chckFarmSolution"
     $chckFarmSolution.Checked = $true
@@ -5723,13 +5724,13 @@ function DisplayGUI()
     $labelConfiguration = New-Object System.Windows.Forms.Label
     $labelConfiguration.Text = "Configuration:"
     $labelConfiguration.AutoSize = $true
-    $labelConfiguration.Top = 220 + $topBannerHeight
+    $labelConfiguration.Top = $topBannerHeight
     $labelConfiguration.Left = $thirdColumnLeft
     $labelConfiguration.Font = [System.Drawing.Font]::new($labelConfiguration.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
     $panelMain.Controls.Add($labelConfiguration)
 
     $panelConfig = New-Object System.Windows.Forms.Panel
-    $panelConfig.Top = 280 + $topBannerHeight
+    $panelConfig.Top = 30 + $topBannerHeight
     $panelConfig.Left = $thirdColumnLeft
     $panelConfig.AutoSize = $true
     $panelConfig.Width = 400
@@ -5744,7 +5745,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAAM);
 
     $chckAlternateUrl = New-Object System.Windows.Forms.CheckBox
-    $chckAlternateUrl.Top = 30
+    $chckAlternateUrl.Top = 20
     $chckAlternateUrl.AutoSize = $true;
     $chckAlternateUrl.Name = "chckAlternateUrl"
     $chckAlternateUrl.Checked = $true
@@ -5752,7 +5753,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAlternateUrl);
 
     $chckAntivirus = New-Object System.Windows.Forms.CheckBox
-    $chckAntivirus.Top = 60
+    $chckAntivirus.Top = 40
     $chckAntivirus.AutoSize = $true;
     $chckAntivirus.Name = "chckAntivirus"
     $chckAntivirus.Checked = $true
@@ -5760,7 +5761,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAntivirus);
 
     $chckBlobCache = New-Object System.Windows.Forms.CheckBox
-    $chckBlobCache.Top = 90
+    $chckBlobCache.Top = 60
     $chckBlobCache.AutoSize = $true;
     $chckBlobCache.Name = "chckBlobCache"
     $chckBlobCache.Checked = $true
@@ -5768,7 +5769,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckBlobCache);
 
     $chckCacheAccounts = New-Object System.Windows.Forms.CheckBox
-    $chckCacheAccounts.Top = 120
+    $chckCacheAccounts.Top = 80
     $chckCacheAccounts.AutoSize = $true;
     $chckCacheAccounts.Name = "chckCacheAccounts"
     $chckCacheAccounts.Checked = $true
@@ -5776,7 +5777,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckCacheAccounts);
 
     $chckDiagLogging = New-Object System.Windows.Forms.CheckBox
-    $chckDiagLogging.Top = 150
+    $chckDiagLogging.Top = 100
     $chckDiagLogging.AutoSize = $true;
     $chckDiagLogging.Name = "chckDiagLogging"
     $chckDiagLogging.Checked = $true
@@ -5784,7 +5785,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDiagLogging);
 
     $chckDistributedCache= New-Object System.Windows.Forms.CheckBox
-    $chckDistributedCache.Top = 180
+    $chckDistributedCache.Top = 120
     $chckDistributedCache.AutoSize = $true;
     $chckDistributedCache.Name = "chckDistributedCache"
     $chckDistributedCache.Checked = $false
@@ -5792,7 +5793,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDistributedCache);
 
     $chckFarmConfig = New-Object System.Windows.Forms.CheckBox
-    $chckFarmConfig.Top = 210
+    $chckFarmConfig.Top = 140
     $chckFarmConfig.AutoSize = $true;
     $chckFarmConfig.Name = "chckFarmConfig"
     $chckFarmConfig.Checked = $true
@@ -5800,7 +5801,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmConfig);
 
     $chckFarmPropBag = New-Object System.Windows.Forms.CheckBox
-    $chckFarmPropBag.Top = 240
+    $chckFarmPropBag.Top = 160
     $chckFarmPropBag.AutoSize = $true;
     $chckFarmPropBag.Name = "chckFarmPropBag"
     $chckFarmPropBag.Checked = $true
@@ -5808,7 +5809,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmPropBag);
 
     $chckFeature = New-Object System.Windows.Forms.CheckBox
-    $chckFeature.Top = 270
+    $chckFeature.Top = 180
     $chckFeature.AutoSize = $true;
     $chckFeature.Name = "chckFeature"
     $chckFeature.Checked = $false
@@ -5816,7 +5817,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFeature);
 
     $chckHealth = New-Object System.Windows.Forms.CheckBox
-    $chckHealth.Top = 300
+    $chckHealth.Top = 200
     $chckHealth.AutoSize = $true;
     $chckHealth.Name = "chckHealth"
     $chckHealth.Checked = $true
@@ -5824,7 +5825,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckHealth);
 
     $chckIRM = New-Object System.Windows.Forms.CheckBox
-    $chckIRM.Top = 330
+    $chckIRM.Top = 220
     $chckIRM.AutoSize = $true;
     $chckIRM.Name = "chckIRM"
     $chckIRM.Checked = $true
@@ -5832,7 +5833,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckIRM);
 
     $chckManagedPaths = New-Object System.Windows.Forms.CheckBox
-    $chckManagedPaths.Top = 360
+    $chckManagedPaths.Top = 240
     $chckManagedPaths.AutoSize = $true;
     $chckManagedPaths.Name = "chckManagedPaths"
     $chckManagedPaths.Checked = $true
@@ -5840,7 +5841,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckManagedPaths);
 
     $chckOOS = New-Object System.Windows.Forms.CheckBox
-    $chckOOS.Top = 390
+    $chckOOS.Top = 260
     $chckOOS.AutoSize = $true;
     $chckOOS.Name = "chckOOS"
     $chckOOS.Checked = $false
@@ -5848,7 +5849,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckOOS);
 
     $chckOutgoingEmail = New-Object System.Windows.Forms.CheckBox
-    $chckOutgoingEmail.Top = 420
+    $chckOutgoingEmail.Top = 280
     $chckOutgoingEmail.AutoSize = $true;
     $chckOutgoingEmail.Name = "chckOutgoingEmail"
     $chckOutgoingEmail.Checked = $true
@@ -5856,7 +5857,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckOutgoingEmail);
 
     $chckServiceAppPool = New-Object System.Windows.Forms.CheckBox
-    $chckServiceAppPool.Top = 450
+    $chckServiceAppPool.Top = 300
     $chckServiceAppPool.AutoSize = $true;
     $chckServiceAppPool.Name = "chckServiceAppPool"
     $chckServiceAppPool.Checked = $true
@@ -5864,7 +5865,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceAppPool);
 
     $chckServiceInstance = New-Object System.Windows.Forms.CheckBox
-    $chckServiceInstance.Top = 480
+    $chckServiceInstance.Top = 320
     $chckServiceInstance.AutoSize = $true;
     $chckServiceInstance.Name = "chckServiceInstance"
     $chckServiceInstance.Checked = $true
@@ -5872,7 +5873,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceInstance);
 
     $chckSessionState= New-Object System.Windows.Forms.CheckBox
-    $chckSessionState.Top = 510
+    $chckSessionState.Top = 340
     $chckSessionState.AutoSize = $true;
     $chckSessionState.Name = "chckSessionState"
     $chckSessionState.Checked = $true
@@ -5880,7 +5881,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckSessionState);
 
     $chckDatabaseAAG= New-Object System.Windows.Forms.CheckBox
-    $chckDatabaseAAG.Top = 540
+    $chckDatabaseAAG.Top = 360
     $chckDatabaseAAG.AutoSize = $true;
     $chckDatabaseAAG.Name = "chckDatabaseAAG"
     $chckDatabaseAAG.Checked = $false
@@ -5888,7 +5889,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDatabaseAAG);
 
     $chckTimerJob = New-Object System.Windows.Forms.CheckBox
-    $chckTimerJob.Top = 570
+    $chckTimerJob.Top = 380
     $chckTimerJob.AutoSize = $true;
     $chckTimerJob.Name = "chckTimerJob"
     $chckTimerJob.Checked = $false
@@ -5900,7 +5901,7 @@ function DisplayGUI()
 
     #region User Profile Service
     $lblUPS = New-Object System.Windows.Forms.Label
-    $lblUPS.Top = $topBannerHeight
+    $lblUPS.Top = $panelConfig.Height + $topBannerHeight + 40
     $lblUPS.Text = "User Profile:"
     $lblUPS.AutoSize = $true
     $lblUPS.Left = $thirdColumnLeft
@@ -5908,7 +5909,7 @@ function DisplayGUI()
     $panelMain.Controls.Add($lblUPS)
 
     $panelUPS = New-Object System.Windows.Forms.Panel
-    $panelUPS.Top = 50 + $topBannerHeight
+    $panelUPS.Top = $panelConfig.Height + $topBannerHeight + 70
     $panelUPS.Left = $thirdColumnLeft
     $panelUPS.AutoSize = $true
     $panelUPS.Width = 400
@@ -5923,7 +5924,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSProp);
 
     $chckUPSSection = New-Object System.Windows.Forms.CheckBox
-    $chckUPSSection.Top = 30
+    $chckUPSSection.Top = 20
     $chckUPSSection.AutoSize = $true
     $chckUPSSection.Name = "chckUPSSection"
     $chckUPSSection.Checked = $false
@@ -5931,7 +5932,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSSection);
 
     $chckUPSSync = New-Object System.Windows.Forms.CheckBox
-    $chckUPSSync.Top = 60
+    $chckUPSSync.Top = 40
     $chckUPSSync.AutoSize = $true;
     $chckUPSSync.Name = "chckUPSSync"
     $chckUPSSync.Checked = $true
@@ -5939,7 +5940,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSSync);
 
     $chckUPSA = New-Object System.Windows.Forms.CheckBox
-    $chckUPSA.Top = 90
+    $chckUPSA.Top = 60
     $chckUPSA.AutoSize = $true;
     $chckUPSA.Name = "chckUPSA"
     $chckUPSA.Checked = $true
@@ -5947,7 +5948,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSA);
 
     $chckUPSPermissions = New-Object System.Windows.Forms.CheckBox
-    $chckUPSPermissions.Top = 120
+    $chckUPSPermissions.Top = 80
     $chckUPSPermissions.AutoSize = $true;
     $chckUPSPermissions.Name = "chckUPSPermissions"
     $chckUPSPermissions.Checked = $true
@@ -6037,8 +6038,8 @@ function DisplayGUI()
     $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
     $txtFarmAccount.Top = 5
     $txtFarmAccount.Left = 550
-    $txtFarmAccount.Width = 200
-    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 12)
+    $txtFarmAccount.Width = 150
+    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 10)
     $panelMenu.Controls.Add($txtFarmAccount)
 
     $lblPassword = New-Object System.Windows.Forms.Label
@@ -6053,9 +6054,9 @@ function DisplayGUI()
     $txtPassword = New-Object System.Windows.Forms.Textbox
     $txtPassword.Top = 40
     $txtPassword.Left = 550
-    $txtPassword.Width = 200
+    $txtPassword.Width = 150
     $txtPassword.PasswordChar = "*"
-    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
+    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 10)
     $txtPassword.Add_KeyDown({
         if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
         {
