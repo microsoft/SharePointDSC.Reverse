@@ -1835,7 +1835,7 @@ function Read-SPServiceInstance($Servers)
                     $ensureValue = "Absent"
                 }
 
-                $currentService = @{Name = $serviceInstance.TypeName; Ensure = $ensureValue}
+                $currentService = @{Name = $serviceInstance.GetType().Name; Ensure = $ensureValue}
 
                 if($serviceTypeName -ne "SPDistributedCacheServiceInstance" -and $serviceTypeName -ne "ProfileSynchronizationServiceInstance")
                 {
