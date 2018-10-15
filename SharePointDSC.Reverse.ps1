@@ -1813,7 +1813,7 @@ function Read-SPServiceInstance($Servers)
     foreach($Server in $Servers)
     {
         Write-Host "Scanning SPServiceInstance on {$Server}"
-        $serviceInstancesOnCurrentServer = Get-SPServiceInstance | Where-Object{$_.Server.Name -eq $Server} | Sort-Object -Property TypeName
+        $serviceInstancesOnCurrentServer = Get-SPServiceInstance -All | Where-Object{$_.Server.Name -eq $Server} | Sort-Object -Property TypeName
         $serviceStatuses = @()
         $ensureValue = "Present"
 
