@@ -4616,14 +4616,17 @@ function Read-SPBlobCacheSettings()
         {
             $alternateUrls = $webApp.AlternateUrl
 
+            $zones = @("Default")
             if($alternateUrls.Length -ge 1)
             {
-                <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
-                        with a different zone. Therefore we are limited to keeping one entry only. #>
+                $zones = $alternateUrls | Select-Object Zone
+            }
+            foreach($zone in $zones)
+            {
                 $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $params.WebAppUrl = $webApp.Url
-                $params.Zone = $alternateUrls[0].Zone
+                $params.Zone = $zone
                 $results = Get-TargetResource @params
                 $results = Repair-Credentials -results $results
 
