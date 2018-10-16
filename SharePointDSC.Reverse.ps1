@@ -3750,41 +3750,44 @@ function Read-SPSearchResultSource()
                                     $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
                                     $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
                                     $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
-                                    $filter.IncludeHigherLevel = $false
+                                    $filter.IncludeHigherLevel = $true
                                     $sources = $fedman.ListSources($filter,$true)
                                         
                                     foreach($source in $sources)
                                     {
                                         try
                                         {
-                                            $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                            $currentContent += "        {`r`n"
-                                            $params.SearchServiceAppName = $serviceName
-                                            $params.Name = $source.Name
-                                            $params.ScopeUrl = $web.Url
-                                            $results = Get-TargetResource @params
-
-                                            $providers = $fedman.ListProviders()
-                                            $provider = $providers.Values | Where-Object -FilterScript {
-                                                $_.Id -eq $source.ProviderId 
-                                            }
-
-                                            if($null -eq $results.Get_Item("ConnectionUrl"))
+                                            if(!$source.BuiltIn)
                                             {
-                                                $results.Remove("ConnectionUrl")
-                                            }
-                                            $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
-                                            $results.ProviderType = $provider.Name
-                                            $results.Ensure = "Present"
-                                            if($source.ConnectionUrlTemplate)
-                                            {
-                                                $results.ConnectionUrl = $source.ConnectionUrlTemplate
-                                            }
+                                                $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                                $currentContent += "        {`r`n"
+                                                $params.SearchServiceAppName = $serviceName
+                                                $params.Name = $source.Name
+                                                $params.ScopeUrl = $web.Url
+                                                $results = Get-TargetResource @params
 
-                                            $results = Repair-Credentials -results $results
-                                            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                                            $currentContent += "        }`r`n"
-                                            $Script:dscConfigContent += $currentContent
+                                                $providers = $fedman.ListProviders()
+                                                $provider = $providers.Values | Where-Object -FilterScript {
+                                                    $_.Id -eq $source.ProviderId 
+                                                }
+
+                                                if($null -eq $results.Get_Item("ConnectionUrl"))
+                                                {
+                                                    $results.Remove("ConnectionUrl")
+                                                }
+                                                $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
+                                                $results.ProviderType = $provider.Name
+                                                $results.Ensure = "Present"
+                                                if($source.ConnectionUrlTemplate)
+                                                {
+                                                    $results.ConnectionUrl = $source.ConnectionUrlTemplate
+                                                }
+
+                                                $results = Repair-Credentials -results $results
+                                                $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                                                $currentContent += "        }`r`n"
+                                                $Script:dscConfigContent += $currentContent
+                                            }
                                         }
                                         catch{}
                                     }
