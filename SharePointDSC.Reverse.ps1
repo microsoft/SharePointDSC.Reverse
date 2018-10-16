@@ -1823,7 +1823,7 @@ function Read-SPServiceInstance($Servers)
         {
             try
             {
-                $serviceTypeName = $serviceInstance.GetType().Name
+                $serviceTypeName = $serviceInstance.TypeName
                 Write-Host "    -> Scanning instance [$i/$total] {$serviceTypeName}"
 
                 if($serviceInstance.Status -eq "Online")
@@ -1835,7 +1835,7 @@ function Read-SPServiceInstance($Servers)
                     $ensureValue = "Absent"
                 }
 
-                $currentService = @{Name = $serviceInstance.GetType().Name; Ensure = $ensureValue}
+                $currentService = @{Name = $serviceInstance.TypeName; Ensure = $ensureValue}
 
                 if($serviceTypeName -ne "SPDistributedCacheServiceInstance" -and $serviceTypeName -ne "ProfileSynchronizationServiceInstance")
                 {
@@ -3706,6 +3706,11 @@ function Read-SPSearchResultSource()
                             $providers = $fedman.ListProviders()
                             $provider = $providers.Values | Where-Object -FilterScript {
                                 $_.Id -eq $resultSource.ProviderId 
+                            }
+
+                            if($results.Alias -eq "")
+                            {
+                                $results.Remove("Alias")
                             }
 
                             if($null -eq $results.Get_Item("ConnectionUrl"))
