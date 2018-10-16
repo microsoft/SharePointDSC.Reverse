@@ -3700,7 +3700,6 @@ function Read-SPSearchResultSource()
                             $currentContent += "        {`r`n"
                             $params.SearchServiceAppName = $serviceName
                             $params.Name = $rsName
-                            $params.Remove("ScopeUrl")
                             $results = Get-TargetResource @params
 
                             $providers = $fedman.ListProviders()
