@@ -266,16 +266,16 @@ function Orchestrator
                     Read-SPManagedAccounts
                 }
 
-                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPContentDatabase
-                }
-
                 if($Quiet -or $chckWebApp.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPWebApplications
+                }
+
+                if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPContentDatabase
                 }
 
                 if($Quiet -or $chckWebAppPerm.Checked)
@@ -3203,8 +3203,8 @@ function Get-SPServiceAppSecurityMembers($member)
             $value = "`"" + $member.UserName + "`";"
         }
         return "MSFT_SPServiceAppSecurityEntry {`r`n `
-            Username    = " + $value + "`r`n" + `
-            "AccessLevel = " + $member.AccessLevel + ";`
+            Username    = " + $value + "`r`n `
+            AccessLevel = `"" + $member.AccessLevel + "`" `
         }"
     }
     return $null
@@ -3693,7 +3693,6 @@ function Read-SPSearchResultSource()
                     {
                         try
                         {
-                            
                             $rsName = $resultSource.Name
                             Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
                             $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
@@ -3706,11 +3705,6 @@ function Read-SPSearchResultSource()
                             $providers = $fedman.ListProviders()
                             $provider = $providers.Values | Where-Object -FilterScript {
                                 $_.Id -eq $resultSource.ProviderId 
-                            }
-
-                            if($results.Alias -eq "")
-                            {
-                                $results.Remove("Alias")
                             }
 
                             if($null -eq $results.Get_Item("ConnectionUrl"))
@@ -3883,7 +3877,8 @@ function Read-SPSearchManagedProperty()
                 $serviceName = $ssa.DisplayName
                 Write-Host "Scanning Managed Properties for Search Service Application [$i/$total] {$serviceName}"
 
-                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa
+                # Do not extract OOTB properties that are set as ReadOnly
+                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa | Where-Object {!($_.SystemDefined -and $_.IsReadOnly)}
 
                 $j = 1
                 $total = $properties.Length
