@@ -72,7 +72,7 @@ try
 }
 catch
 {
-    $Script:version = "N/A"
+    $Script:version = $SPDSCVersion
 }
 $Script:SPDSCPath = $SPDSCSource + $SPDSCVersion
 $Global:spFarmAccount = ""
@@ -3700,6 +3700,7 @@ function Read-SPSearchResultSource()
                             $currentContent += "        {`r`n"
                             $params.SearchServiceAppName = $serviceName
                             $params.Name = $rsName
+                            $params.ScopeUrl = "Global"
                             $results = Get-TargetResource @params
 
                             $providers = $fedman.ListProviders()
@@ -3746,12 +3747,13 @@ function Read-SPSearchResultSource()
                             {
                                 foreach($web in $site.AllWebs)
                                 {
+                                    Write-Host "Scanning Results Sources for {$($web.Url)}"
                                     $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
                                     $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
                                     $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
                                     $filter.IncludeHigherLevel = $true
                                     $sources = $fedman.ListSources($filter,$true)
-                                        
+
                                     foreach($source in $sources)
                                     {
                                         try
