@@ -3202,8 +3202,8 @@ function Get-SPServiceAppSecurityMembers($member)
         {
             $value = "`"" + $member.UserName + "`";"
         }
-        return "MSFT_SPServiceAppSecurityEntry {`r`n `
-            Username    = " + $value + "`r`n `
+        return "MSFT_SPServiceAppSecurityEntry { `
+            Username    = " + $value + " `
             AccessLevel = `"" + $member.AccessLevel + "`" `
         }"
     }
@@ -3893,6 +3893,10 @@ function Read-SPSearchManagedProperty()
                     $params.PropertyType = $property.ManagedType
                     $results = Get-TargetResource @params
 
+                    if($results.Aliases.Count -eq 0)
+                    {
+                        $results.Remove("Aliases")
+                    }
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
