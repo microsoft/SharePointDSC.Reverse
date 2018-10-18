@@ -4551,6 +4551,13 @@ function Read-SPUserProfileProperty()
                         $results.Remove("UserProfileServiceAppName")
                     }
 
+                    if($results.TermGroup -eq "" -or $results.TermSet -eq "" -or $results.TermStore -eq "")
+                    {
+                        $results.Remove("TermGroup")
+                        $results.Remove("TermStore")
+                        $results.Remove("TermSet")
+                    }
+
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
