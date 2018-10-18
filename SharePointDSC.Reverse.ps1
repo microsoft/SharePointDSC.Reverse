@@ -3707,7 +3707,7 @@ function Read-SPSearchResultSource()
                                 $_.Id -eq $resultSource.ProviderId 
                             }
 
-                            if($null -eq $results.Get_Item("ConnectionUrl"))
+                            if($null -eq $results.Get_Item("ConnectionUrl") -or $results.ConnectionUrl -eq "")
                             {
                                 $results.Remove("ConnectionUrl")
                             }
