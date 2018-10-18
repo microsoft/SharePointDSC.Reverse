@@ -1823,7 +1823,7 @@ function Read-SPServiceInstance($Servers)
         {
             try
             {
-                $serviceTypeName = $serviceInstance.TypeName
+                $serviceTypeName = $serviceInstance.GetType().Name
                 Write-Host "    -> Scanning instance [$i/$total] {$serviceTypeName}"
 
                 if($serviceInstance.Status -eq "Online")
@@ -1841,14 +1841,10 @@ function Read-SPServiceInstance($Servers)
                 {
                     $serviceStatuses += $currentService
                 }
-                if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
+                if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceTypeName))
                 {
                     $servicesMasterList += $serviceTypeName
-                    if($serviceTypeName -eq "SPDistributedCacheServiceInstance")
-                    {
-                        # Do Nothing - This is handled by its own call later on.
-                    }
-                    elseif($serviceTypeName -eq "ProfileSynchronizationServiceInstance")
+                    if($serviceTypeName -eq "ProfileSynchronizationServiceInstance")
                     {
                         $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileSyncService\MSFT_SPUserProfileSyncService.psm1")
                         Import-Module $module
