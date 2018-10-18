@@ -3639,7 +3639,7 @@ function Read-SPSearchTopology()
 
                 if($results.FirstPartitionDirectory.Length -gt 1)
                 {
-                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory
                 }
 
                 $results = Repair-Credentials -results $results
@@ -5101,7 +5101,10 @@ function Get-SPReverseDSC()
     }
 
     <# Now that we have acquired the output path, save all custom solutions (.wsp) in that directory; #>
-    Save-SPFarmsolution($OutputDSCPath)
+    if($chckFarmSolution.Checked)
+    {
+        Save-SPFarmsolution($OutputDSCPath)
+    }
 
     <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>
     $outputDSCFile = $OutputDSCPath + $fileName
