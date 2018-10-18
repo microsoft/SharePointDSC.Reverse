@@ -1145,13 +1145,11 @@ function Read-SPWebApplications (){
             {
                 $results.Remove("Port")
             }
-            elseif($result.Port){
-                $results.Port = 80
-            }
-            else
+            elseif(!$result.Url.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
+
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             if($convertToVariable)
             {
