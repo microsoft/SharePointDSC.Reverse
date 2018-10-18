@@ -3738,7 +3738,7 @@ function Read-SPSearchResultSource()
                                 foreach($web in $site.AllWebs)
                                 {
                                     # If the site is a subsite, then the SPWeb option had to be selected for extraction
-                                    if($site.RootWeb -ne $web -or $chckSPWeb.Checked)
+                                    if($site.RootWeb -eq $web -or $chckSPWeb.Checked)
                                     {
                                         Write-Host "Scanning Results Sources for {$($web.Url)}"
                                         $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
