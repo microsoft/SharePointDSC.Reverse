@@ -4471,6 +4471,7 @@ function Read-SPUserProfileSyncConnection()
                         {
                             $results.Remove("UseDisabledFilter")
                         }
+                        Save-Credentials -UserName $results.ConnectionCredentials.UserName
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                         $Script:dscConfigContent += "        }`r`n"
                     }
