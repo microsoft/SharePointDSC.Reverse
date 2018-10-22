@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.6.0.0
+.VERSION 3.0.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -1141,11 +1141,11 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            if($results.URl.Contains(":") -and $results.Port)
+            if($results.URl.Contains(":") -and $results.Port -and $results.Port -ne 80)
             {
                 $results.Remove("Port")
             }
-            elseif(!$result.Url.Contains(":") -and !$results.Port)
+            elseif(!$results.Url.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
@@ -5951,7 +5951,7 @@ function DisplayGUI()
     $chckUPSProp = New-Object System.Windows.Forms.CheckBox
     $chckUPSProp.Top = 0
     $chckUPSProp.AutoSize = $true;
-    $chckUPSProp.Name = "chckManagedProp"
+    $chckUPSProp.Name = "chckUPSProp"
     $chckUPSProp.Checked = $false
     $chckUPSProp.Text = "Profile Properties"
     $panelUPS.Controls.Add($chckUPSProp);
