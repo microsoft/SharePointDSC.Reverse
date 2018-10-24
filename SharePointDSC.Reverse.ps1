@@ -20,7 +20,7 @@
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="2.5.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="3.0.0.0"}
 
 <#
 
@@ -52,7 +52,7 @@ $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "2.5.0.0"
+$SPDSCVersion = "3.0.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -929,7 +929,7 @@ function Read-SPProductVersions
 }
 function Read-SPInstall
 {
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$False" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
