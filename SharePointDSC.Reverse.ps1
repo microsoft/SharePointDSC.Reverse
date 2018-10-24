@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 2.6.0.0
+.VERSION 3.0.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -47,6 +47,7 @@ $Script:DH_SPQUOTATEMPLATE = @{}
 
 <## Scripts Variables #>
 $Script:dscConfigContent = ""
+$Global:AllUsers = @()
 $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
@@ -71,7 +72,7 @@ try
 }
 catch
 {
-    $Script:version = "N/A"
+    $Script:version = $SPDSCVersion
 }
 $Script:SPDSCPath = $SPDSCSource + $SPDSCVersion
 $Global:spFarmAccount = ""
@@ -164,10 +165,11 @@ function Orchestrator
         {
             if($Standalone)
             {
-                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description ""
+                $Script:currentServerName = $env:COMPUTERNAME
+                Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
             }
             else {
-                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description ""
+                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description "Identifier for the Current Server"
             }
 
             if($serverNumber -eq 1)
@@ -185,7 +187,7 @@ function Orchestrator
             {
                 if($StandAlone)
                 {
-                    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "StandAlone" -Description "MinRole for the current server;"
+                    Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
                 }
                 else {
                     Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value $currentServer.Role -Description "MinRole for the current server;"
@@ -1139,17 +1141,15 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            if($results.URl.Contains(":") -and $results.Port)
+            if($results.URl.Contains(":") -and $results.Port -and $results.Port -ne 80)
             {
                 $results.Remove("Port")
             }
-            elseif($result.Port){
-                $results.Port = 80
-            }
-            else
+            elseif(!$results.Url.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
+
             $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             if($convertToVariable)
             {
@@ -1476,6 +1476,10 @@ function Read-SPSitesAndWebs ()
                 $plainTextUser = $false;
                 if(!$ownerAlias)
                 {
+                    if(!$Global:AllUsers.Contains($results.OwnerAlias) -and $results.OwnerAlias -ne "")
+                    {
+                        $Global:AllUsers += $results.OwnerAlias
+                    }
                     $plainTextUser = $true
                     $ownerAlias = $results.OwnerAlias
                 }
@@ -1494,6 +1498,10 @@ function Read-SPSitesAndWebs ()
                     }
                     else
                     {
+                        if(!$Global:AllUsers.Contains($results.SecondaryOwnerAlias) -and $results.SecondaryOwnerAlias -ne "")
+                        {
+                            $Global:AllUsers += $results.SecondaryOwnerAlias
+                        }
                         $secondaryOwner = $results.SecondaryOwnerAlias
                     }
                 }
@@ -1803,7 +1811,7 @@ function Read-SPServiceInstance($Servers)
     foreach($Server in $Servers)
     {
         Write-Host "Scanning SPServiceInstance on {$Server}"
-        $serviceInstancesOnCurrentServer = Get-SPServiceInstance | Where-Object{$_.Server.Name -eq $Server} | Sort-Object -Property TypeName
+        $serviceInstancesOnCurrentServer = Get-SPServiceInstance -All | Where-Object{$_.Server.Name -eq $Server} | Sort-Object -Property TypeName
         $serviceStatuses = @()
         $ensureValue = "Present"
 
@@ -1831,14 +1839,10 @@ function Read-SPServiceInstance($Servers)
                 {
                     $serviceStatuses += $currentService
                 }
-                if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceInstance.TypeName))
+                if($ensureValue -eq "Present" -and !$servicesMasterList.Contains($serviceTypeName))
                 {
                     $servicesMasterList += $serviceTypeName
-                    if($serviceTypeName -eq "SPDistributedCacheServiceInstance")
-                    {
-                        # Do Nothing - This is handled by its own call later on.
-                    }
-                    elseif($serviceTypeName -eq "ProfileSynchronizationServiceInstance")
+                    if($serviceTypeName -eq "ProfileSynchronizationServiceInstance")
                     {
                         $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPUserProfileSyncService\MSFT_SPUserProfileSyncService.psm1")
                         Import-Module $module
@@ -3190,11 +3194,11 @@ function Get-SPServiceAppSecurityMembers($member)
         }
         else
         {
-            $value = $member.UserName
+            $value = "`"" + $member.UserName + "`";"
         }
         return "MSFT_SPServiceAppSecurityEntry { `
-            Username    = `"" + $value + "`" `
-            AccessLevel = `"" + $member.AccessLevel + "`";`
+            Username    = " + $value + " `
+            AccessLevel = `"" + $member.AccessLevel + "`" `
         }"
     }
     return $null
@@ -3633,7 +3637,7 @@ function Read-SPSearchTopology()
 
                 if($results.FirstPartitionDirectory.Length -gt 1)
                 {
-                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory[0]
+                    $results.FirstPartitionDirectory = $results.FirstPartitionDirectory
                 }
 
                 $results = Repair-Credentials -results $results
@@ -3681,35 +3685,40 @@ function Read-SPSearchResultSource()
                     <# Filter out the hidden Local SharePoint Graph provider since it is not supported by SharePointDSC. #>
                     if($resultSource.Name -ne "Local SharePoint Graph")
                     {
-                        $rsName = $resultSource.Name
-                        Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
-                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                        $Script:dscConfigContent += "        {`r`n"
-                        $params.SearchServiceAppName = $serviceName
-                        $params.Name = $rsName
-                        $params.Remove("ScopeUrl")
-                        $results = Get-TargetResource @params
-
-                        $providers = $fedman.ListProviders()
-                        $provider = $providers.Values | Where-Object -FilterScript {
-                            $_.Id -eq $resultSource.ProviderId 
-                        }
-
-                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                        try
                         {
-                            $results.Remove("ConnectionUrl")
-                        }
-                        $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
-                        $results.ProviderType = $provider.Name
-                        $results.Ensure = "Present"
-                        if($resultSource.ConnectionUrlTemplate)
-                        {
-                            $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
-                        }
+                            $rsName = $resultSource.Name
+                            Write-Host "    -> Scanning Results Source [$j/$totalRS] {$rsName}"
+                            $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                            $currentContent += "        {`r`n"
+                            $params.SearchServiceAppName = $serviceName
+                            $params.Name = $rsName
+                            $params.ScopeUrl = "Global"
+                            $results = Get-TargetResource @params
 
-                        $results = Repair-Credentials -results $results
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                        $Script:dscConfigContent += "        }`r`n"
+                            $providers = $fedman.ListProviders()
+                            $provider = $providers.Values | Where-Object -FilterScript {
+                                $_.Id -eq $resultSource.ProviderId 
+                            }
+
+                            if($null -eq $results.Get_Item("ConnectionUrl") -or $results.ConnectionUrl -eq "")
+                            {
+                                $results.Remove("ConnectionUrl")
+                            }
+                            $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
+                            $results.ProviderType = $provider.Name
+                            $results.Ensure = "Present"
+                            if($resultSource.ConnectionUrlTemplate)
+                            {
+                                $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
+                            }
+
+                            $results = Repair-Credentials -results $results
+                            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $currentContent += "        }`r`n"
+                            $Script:dscConfigContent += $currentContent
+                        }
+                        catch{}
                     }
                     $j++
                 }
@@ -3726,43 +3735,55 @@ function Read-SPSearchResultSource()
                             {
                                 foreach($web in $site.AllWebs)
                                 {
-                                    $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
-                                    $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
-                                    $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
-                                    $filter.IncludeHigherLevel = $false
-                                    $sources = $fedman.ListSources($filter,$true)
-                                        
-                                    foreach($source in $sources)
+                                    # If the site is a subsite, then the SPWeb option had to be selected for extraction
+                                    if($site.RootWeb.Url -eq $web.Url -or $chckSPWeb.Checked)
                                     {
-                                        $Script:dscConfigContent += "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                                        $Script:dscConfigContent += "        {`r`n"
-                                        $params.SearchServiceAppName = $serviceName
-                                        $params.Name = $source.Name
-                                        $params.ScopeUrl = $web.Url
-                                        $results = Get-TargetResource @params
+                                        Write-Host "Scanning Results Sources for {$($web.Url)}"
+                                        $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
+                                        $searchOwner = Get-SPEnterpriseSearchOwner -Level SPWeb -SPWeb $web
+                                        $filter = New-Object Microsoft.Office.Server.Search.Administration.SearchObjectFilter($searchOwner)
+                                        $filter.IncludeHigherLevel = $true
+                                        $sources = $fedman.ListSources($filter,$true)
 
-                                        $providers = $fedman.ListProviders()
-                                        $provider = $providers.Values | Where-Object -FilterScript {
-                                            $_.Id -eq $source.ProviderId 
-                                        }
-
-                                        if($null -eq $results.Get_Item("ConnectionUrl"))
+                                        foreach($source in $sources)
                                         {
-                                            $results.Remove("ConnectionUrl")
-                                        }
-                                        $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
-                                        $results.ProviderType = $provider.Name
-                                        $results.Ensure = "Present"
-                                        if($source.ConnectionUrlTemplate)
-                                        {
-                                            $results.ConnectionUrl = $source.ConnectionUrlTemplate
-                                        }
+                                            try
+                                            {
+                                                if(!$source.BuiltIn)
+                                                {
+                                                    $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                                                    $currentContent += "        {`r`n"
+                                                    $params.SearchServiceAppName = $serviceName
+                                                    $params.Name = $source.Name
+                                                    $params.ScopeUrl = $web.Url
+                                                    $results = Get-TargetResource @params
 
-                                        $results = Repair-Credentials -results $results
-                                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                                        $Script:dscConfigContent += "        }`r`n"
+                                                    $providers = $fedman.ListProviders()
+                                                    $provider = $providers.Values | Where-Object -FilterScript {
+                                                        $_.Id -eq $source.ProviderId 
+                                                    }
+
+                                                    if($null -eq $results.Get_Item("ConnectionUrl"))
+                                                    {
+                                                        $results.Remove("ConnectionUrl")
+                                                    }
+                                                    $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
+                                                    $results.ProviderType = $provider.Name
+                                                    $results.Ensure = "Present"
+                                                    if($source.ConnectionUrlTemplate)
+                                                    {
+                                                        $results.ConnectionUrl = $source.ConnectionUrlTemplate
+                                                    }
+
+                                                    $results = Repair-Credentials -results $results
+                                                    $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                                                    $currentContent += "        }`r`n"
+                                                    $Script:dscConfigContent += $currentContent
+                                                }
+                                            }
+                                            catch{}
+                                        }
                                     }
-
                                     $web.Dispose()
                                 }
                             }
@@ -3853,7 +3874,8 @@ function Read-SPSearchManagedProperty()
                 $serviceName = $ssa.DisplayName
                 Write-Host "Scanning Managed Properties for Search Service Application [$i/$total] {$serviceName}"
 
-                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa
+                # Do not extract OOTB properties that are set as ReadOnly
+                $properties = Get-SPEnterpriseSearchMetadataManagedProperty -SearchApplication $ssa | Where-Object {!($_.SystemDefined -and $_.IsReadOnly)}
 
                 $j = 1
                 $total = $properties.Length
@@ -3868,6 +3890,10 @@ function Read-SPSearchManagedProperty()
                     $params.PropertyType = $property.ManagedType
                     $results = Get-TargetResource @params
 
+                    if($results.Aliases.Count -eq 0)
+                    {
+                        $results.Remove("Aliases")
+                    }
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
@@ -3890,28 +3916,22 @@ function Read-SPSearchCrawlerImpactRule()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $ssas = Get-SPServiceApplication | Where-Object -FilterScript{$_.GetType().FullName -eq "Microsoft.Office.Server.Search.Administration.SearchServiceApplication"}
-    foreach($ssa in $ssas)
+    $impactRules = Get-SPEnterpriseSearchSiteHitRule
+
+    foreach($crawlRule in $impactRules)
     {
         try
         {
-            if($null -ne $ssa)
-            {
-                $impactRules = Get-SPEnterpriseSearchSiteHitRule -SearchService $ssa
-
-                foreach($crawlRule in $impactRules)
-                {
-                    $Script:dscConfigContent += "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
-                    $Script:dscConfigContent += "        {`r`n"
-                    $params.ServiceAppName = $ssa.DisplayName
-                    $params.Path = $crawlRule.Path
-                    $params.Remove("CertificateName")
-                    $results = Get-TargetResource @params
-                    $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-                    $Script:dscConfigContent += "        }`r`n"
-                }
-            }
+            $currentContent = "        SPSearchCrawlerImpactRule " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $currentContent += "        {`r`n"
+            $params.ServiceAppName = $ssa.DisplayName
+            $params.Path = $crawlRule.Path
+            $params.Remove("CertificateName")
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentContent += "        }`r`n"
+            $Script:dscConfigContent += $currentContent
         }
         catch
         {
@@ -4449,6 +4469,7 @@ function Read-SPUserProfileSyncConnection()
                         {
                             $results.Remove("UseDisabledFilter")
                         }
+                        Save-Credentials -UserName $results.ConnectionCredentials.UserName
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                         $Script:dscConfigContent += "        }`r`n"
                     }
@@ -4525,6 +4546,13 @@ function Read-SPUserProfileProperty()
                         $results.Remove("UserProfileServiceAppName")
                     }
 
+                    if($results.TermGroup -eq "" -or $results.TermSet -eq "" -or $results.TermStore -eq "")
+                    {
+                        $results.Remove("TermGroup")
+                        $results.Remove("TermStore")
+                        $results.Remove("TermSet")
+                    }
+
                     $results = Repair-Credentials -results $results
                     $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                     $Script:dscConfigContent += "        }`r`n"
@@ -4594,14 +4622,17 @@ function Read-SPBlobCacheSettings()
         {
             $alternateUrls = $webApp.AlternateUrl
 
+            $zones = @("Default")
             if($alternateUrls.Length -ge 1)
             {
-                <# WA - Due to Bug in SPDSC 1.7.0.0, we can't have two entries for the same Web Application, but
-                        with a different zone. Therefore we are limited to keeping one entry only. #>
+                $zones = $alternateUrls | Select-Object Zone
+            }
+            foreach($zone in $zones)
+            {
                 $Script:dscConfigContent += "        SPBlobCacheSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $params.WebAppUrl = $webApp.Url
-                $params.Zone = $alternateUrls[0].Zone
+                $params.Zone = $zone
                 $results = Get-TargetResource @params
                 $results = Repair-Credentials -results $results
 
@@ -5068,7 +5099,10 @@ function Get-SPReverseDSC()
     }
 
     <# Now that we have acquired the output path, save all custom solutions (.wsp) in that directory; #>
-    Save-SPFarmsolution($OutputDSCPath)
+    if($chckFarmSolution.Checked)
+    {
+        Save-SPFarmsolution($OutputDSCPath)
+    }
 
     <## Save the content of the resulting DSC Configuration file into a file at the specified path. #>
     $outputDSCFile = $OutputDSCPath + $fileName
@@ -5156,7 +5190,7 @@ function SelectComponentsForMode($mode){
     {
         $components = $defaultComponents
     }
-    foreach($panel in $form.Controls)
+    foreach($panel in $panelMain.Controls)
     {
         if($panel.GetType().ToString() -eq "System.Windows.Forms.Panel")
         {
@@ -5188,28 +5222,37 @@ function DisplayGUI()
 {
     #region Global
     $firstColumnLeft = 10
-    $secondColumnLeft = 500
-    $thirdColumnLeft = 1000
+    $secondColumnLeft = 280
+    $thirdColumnLeft = 540
     $topBannerHeight = 70
     #endregion
 
 
     $form = New-Object System.Windows.Forms.Form
-    $form.Autosize = $true
+    $screens = [System.Windows.Forms.Screen]::AllScreens
+    $form.Width = $screens[0].Bounds.Width
+    $form.Height = $screens[0].Bounds.Height - 60 
+    $form.WindowState = [System.Windows.Forms.FormWindowState]::Maximized 
+
+    $panelMain = New-Object System.Windows.Forms.Panel
+    $panelMain.Width = $form.Width
+    $panelMain.Height = $form.Height
+    $panelMain.AutoScroll = $true    
 
     #region Information Architecture
     $labelInformationArchitecture = New-Object System.Windows.Forms.Label
+    $labelInformationArchitecture.Left = $firstColumnLeft
     $labelInformationArchitecture.Top = $topBannerHeight
     $labelInformationArchitecture.Text = "Information Architecture:"
     $labelInformationArchitecture.AutoSize = $true
     $labelInformationArchitecture.Font = [System.Drawing.Font]::new($labelInformationArchitecture.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelInformationArchitecture)
+    $panelMain.Controls.Add($labelInformationArchitecture)
 
     $panelInformationArchitecture = New-Object System.Windows.Forms.Panel
-    $panelInformationArchitecture.Top = 50 + $topBannerHeight
+    $panelInformationArchitecture.Top = 30 + $topBannerHeight
     $panelInformationArchitecture.Left = $firstColumnLeft
-    $panelInformationArchitecture.AutoSize = $true
-    $panelInformationArchitecture.Width = 400
+    $panelInformationArchitecture.Height = 80
+    $panelInformationArchitecture.Width = 220
     $panelInformationArchitecture.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
     
     $chckContentDB = New-Object System.Windows.Forms.CheckBox
@@ -5221,7 +5264,7 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckContentDB)
     
     $chckQuotaTemplates = New-Object System.Windows.Forms.CheckBox
-    $chckQuotaTemplates.Top = 30
+    $chckQuotaTemplates.Top = 20
     $chckQuotaTemplates.AutoSize = $true;
     $chckQuotaTemplates.Name = "chckQuotaTemplates"
     $chckQuotaTemplates.Checked = $true
@@ -5229,7 +5272,7 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckQuotaTemplates);
 
     $chckSiteCollection = New-Object System.Windows.Forms.CheckBox
-    $chckSiteCollection.Top = 60
+    $chckSiteCollection.Top = 40
     $chckSiteCollection.AutoSize = $true;
     $chckSiteCollection.Name = "chckSiteCollection"
     $chckSiteCollection.Checked = $true
@@ -5237,30 +5280,30 @@ function DisplayGUI()
     $panelInformationArchitecture.Controls.Add($chckSiteCollection)
 
     $chckSPWeb = New-Object System.Windows.Forms.CheckBox
-    $chckSPWeb.Top = 90
+    $chckSPWeb.Top = 60
     $chckSPWeb.AutoSize = $true;
     $chckSPWeb.Name = "chckSPWeb"
     $chckSPWeb.Checked = $false
     $chckSPWeb.Text = "Subsites (SPWeb)"
     $panelInformationArchitecture.Controls.Add($chckSPWeb)
 
-    $form.Controls.Add($panelInformationArchitecture)
+    $panelMain.Controls.Add($panelInformationArchitecture)
     #endregion
 
     #region Security
     $labelSecurity = New-Object System.Windows.Forms.Label
     $labelSecurity.Text = "Security:"
     $labelSecurity.AutoSize = $true
-    $labelSecurity.Top = 190 + $topBannerHeight
+    $labelSecurity.Top = 120 + $topBannerHeight
     $labelSecurity.Left = $firstColumnLeft
     $labelSecurity.Font = [System.Drawing.Font]::new($labelSecurity.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSecurity)
+    $panelMain.Controls.Add($labelSecurity)
 
     $panelSecurity = New-Object System.Windows.Forms.Panel
-    $panelSecurity.Top = 240 + $topBannerHeight
+    $panelSecurity.Top = 150 + $topBannerHeight
     $panelSecurity.Left = $firstColumnLeft
     $panelSecurity.AutoSize = $true
-    $panelSecurity.Width = 400
+    $panelSecurity.Width = 220
     $panelSecurity.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckFarmAdmin = New-Object System.Windows.Forms.CheckBox
@@ -5272,7 +5315,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckFarmAdmin);
 
     $chckManagedAccount = New-Object System.Windows.Forms.CheckBox
-    $chckManagedAccount.Top = 30
+    $chckManagedAccount.Top = 20
     $chckManagedAccount.AutoSize = $true;
     $chckManagedAccount.Name = "chckManagedAccount"
     $chckManagedAccount.Checked = $true
@@ -5280,7 +5323,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckManagedAccount);
 
     $chckPasswordChange = New-Object System.Windows.Forms.CheckBox
-    $chckPasswordChange.Top = 60
+    $chckPasswordChange.Top = 40
     $chckPasswordChange.AutoSize = $true;
     $chckPasswordChange.Name = "chckPasswordChange"
     $chckPasswordChange.Checked = $true
@@ -5288,7 +5331,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckPasswordChange);
 
     $chckRemoteTrust = New-Object System.Windows.Forms.CheckBox
-    $chckRemoteTrust.Top = 90
+    $chckRemoteTrust.Top = 60
     $chckRemoteTrust.AutoSize = $true;
     $chckRemoteTrust.Name = "chckRemoteTrust"
     $chckRemoteTrust.Checked = $true
@@ -5296,7 +5339,7 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckRemoteTrust);
 
     $chckSASecurity = New-Object System.Windows.Forms.CheckBox
-    $chckSASecurity.Top = 120
+    $chckSASecurity.Top = 80
     $chckSASecurity.AutoSize = $true;
     $chckSASecurity.Name = "chckSASecurity"
     $chckSASecurity.Checked = $true
@@ -5304,30 +5347,30 @@ function DisplayGUI()
     $panelSecurity.Controls.Add($chckSASecurity)
 
     $chckTrustedIdentity = New-Object System.Windows.Forms.CheckBox
-    $chckTrustedIdentity.Top = 150
+    $chckTrustedIdentity.Top = 100
     $chckTrustedIdentity.AutoSize = $true;
     $chckTrustedIdentity.Name = "chckTrustedIdentity"
     $chckTrustedIdentity.Checked = $true
     $chckTrustedIdentity.Text = "Trusted Identity Token Issuer"
     $panelSecurity.Controls.Add($chckTrustedIdentity);
 
-    $form.Controls.Add($panelSecurity)
+    $panelMain.Controls.Add($panelSecurity)
     #endregion
 
     #region Service Applications
     $labelSA = New-Object System.Windows.Forms.Label
     $labelSA.Text = "Service Applications:"
     $labelSA.AutoSize = $true
-    $labelSA.Top = 450 + $topBannerHeight
+    $labelSA.Top = 285 + $topBannerHeight
     $labelSA.Left = $firstColumnLeft
     $labelSA.Font = [System.Drawing.Font]::new($labelSA.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSA)
+    $panelMain.Controls.Add($labelSA)
 
     $panelSA = New-Object System.Windows.Forms.Panel
-    $panelSA.Top = 500 + $topBannerHeight
+    $panelSA.Top = 315 + $topBannerHeight
     $panelSA.Left = $firstColumnLeft
     $panelSA.AutoSize = $true
-    $panelSA.Width = 400
+    $panelSA.Width = 220
     $panelSA.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckSAAccess = New-Object System.Windows.Forms.CheckBox
@@ -5339,7 +5382,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAccess);
 
     $chckSAAccess2010 = New-Object System.Windows.Forms.CheckBox
-    $chckSAAccess2010.Top = 30
+    $chckSAAccess2010.Top = 20
     $chckSAAccess2010.AutoSize = $true;
     $chckSAAccess2010.Name = "chckSAAccess2010"
     $chckSAAccess2010.Checked = $true
@@ -5347,7 +5390,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAccess2010);
 
     $chckSAAppMan= New-Object System.Windows.Forms.CheckBox
-    $chckSAAppMan.Top = 60
+    $chckSAAppMan.Top = 40
     $chckSAAppMan.AutoSize = $true;
     $chckSAAppMan.Name = "chckSAAppMan"
     $chckSAAppMan.Checked = $true
@@ -5355,7 +5398,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAAppMan);
 
     $chckSABCS = New-Object System.Windows.Forms.CheckBox
-    $chckSABCS.Top = 90
+    $chckSABCS.Top = 60
     $chckSABCS.AutoSize = $true;
     $chckSABCS.Name = "chckSABCS"
     $chckSABCS.Checked = $true
@@ -5363,7 +5406,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSABCS);
 
     $chckSAExcel = New-Object System.Windows.Forms.CheckBox
-    $chckSAExcel.Top = 120
+    $chckSAExcel.Top = 80
     $chckSAExcel.AutoSize = $true;
     $chckSAExcel.Name = "chckSAExcel"
     $chckSAExcel.Checked = $true
@@ -5371,7 +5414,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAExcel);
 
     $chckSAMachine = New-Object System.Windows.Forms.CheckBox
-    $chckSAMachine.Top = 150
+    $chckSAMachine.Top = 100
     $chckSAMachine.AutoSize = $true;
     $chckSAMachine.Name = "chckSAMachine"
     $chckSAMachine.Checked = $true
@@ -5379,7 +5422,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAMachine);
 
     $chckSAMMS = New-Object System.Windows.Forms.CheckBox
-    $chckSAMMS.Top = 180
+    $chckSAMMS.Top = 120
     $chckSAMMS.AutoSize = $true;
     $chckSAMMS.Name = "chckSAMMS"
     $chckSAMMS.Checked = $true
@@ -5387,7 +5430,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAMMS);
 
     $chckSAPerformance = New-Object System.Windows.Forms.CheckBox
-    $chckSAPerformance.Top = 210
+    $chckSAPerformance.Top = 140
     $chckSAPerformance.AutoSize = $true;
     $chckSAPerformance.Name = "chckSAWord"
     $chckSAPerformance.Checked = $true
@@ -5395,7 +5438,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAPerformance);
 
     $chckSAPublish = New-Object System.Windows.Forms.CheckBox
-    $chckSAPublish.Top = 240
+    $chckSAPublish.Top = 160
     $chckSAPublish.AutoSize = $true;
     $chckSAPublish.Name = "chckSAPublish"
     $chckSAPublish.Checked = $true
@@ -5403,7 +5446,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAPublish);
 
     $chckSASecureStore = New-Object System.Windows.Forms.CheckBox
-    $chckSASecureStore.Top = 270
+    $chckSASecureStore.Top = 180
     $chckSASecureStore.AutoSize = $true;
     $chckSASecureStore.Name = "chckSASecureStore"
     $chckSASecureStore.Checked = $true
@@ -5411,7 +5454,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSASecureStore);
 
     $chckSAState = New-Object System.Windows.Forms.CheckBox
-    $chckSAState.Top = 300
+    $chckSAState.Top = 200
     $chckSAState.AutoSize = $true;
     $chckSAState.Name = "chckSAState"
     $chckSAState.Checked = $true
@@ -5419,7 +5462,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAState);
 
     $chckSASub = New-Object System.Windows.Forms.CheckBox
-    $chckSASub.Top = 330
+    $chckSASub.Top = 220
     $chckSASub.AutoSize = $true;
     $chckSASub.Name = "chckSASub"
     $chckSASub.Checked = $true
@@ -5428,14 +5471,14 @@ function DisplayGUI()
 
     $chckSAUsage = New-Object System.Windows.Forms.CheckBox
     $chckSAUsage.AutoSize = $true;
-    $chckSAUsage.Top = 360;
+    $chckSAUsage.Top = 240;
     $chckSAUsage.Name = "chckSAUsage"
     $chckSAUsage.Checked = $true
     $chckSAUsage.Text = "Usage Service Application"
     $panelSA.Controls.Add($chckSAUsage);
 
     $chckSAVisio = New-Object System.Windows.Forms.CheckBox
-    $chckSAVisio.Top = 390
+    $chckSAVisio.Top = 260
     $chckSAVisio.AutoSize = $true;
     $chckSAVisio.Name = "chckSAVisio"
     $chckSAVisio.Checked = $true
@@ -5443,7 +5486,7 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAVisio);
 
     $chckSAWord = New-Object System.Windows.Forms.CheckBox
-    $chckSAWord.Top = 420
+    $chckSAWord.Top = 280
     $chckSAWord.AutoSize = $true;
     $chckSAWord.Name = "chckSAWord"
     $chckSAWord.Checked = $true
@@ -5451,14 +5494,14 @@ function DisplayGUI()
     $panelSA.Controls.Add($chckSAWord);
 
     $chckSAWork = New-Object System.Windows.Forms.CheckBox
-    $chckSAWork.Top = 450
+    $chckSAWork.Top = 300
     $chckSAWork.AutoSize = $true;
     $chckSAWork.Name = "chckSAWork"
     $chckSAWork.Checked = $true
     $chckSAWork.Text = "Work Management"
     $panelSA.Controls.Add($chckSAWork);
 
-    $form.Controls.Add($panelSA)
+    $panelMain.Controls.Add($panelSA)
     #endregion
 
     #region Search
@@ -5468,13 +5511,13 @@ function DisplayGUI()
     $labelSearch.AutoSize = $true
     $labelSearch.Left = $secondColumnLeft
     $labelSearch.Font = [System.Drawing.Font]::new($labelSearch.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelSearch)
+    $panelMain.Controls.Add($labelSearch)
 
     $panelSearch = New-Object System.Windows.Forms.Panel
-    $panelSearch.Top = 50 + $topBannerHeight
+    $panelSearch.Top = 30 + $topBannerHeight
     $panelSearch.Left = $secondColumnLeft
     $panelSearch.AutoSize = $true
-    $panelSearch.Width = 400
+    $panelSearch.Width = 220
     $panelSearch.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckSearchContentSource = New-Object System.Windows.Forms.CheckBox
@@ -5486,7 +5529,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchContentSource);
 
     $chckSearchCrawlRule = New-Object System.Windows.Forms.CheckBox
-    $chckSearchCrawlRule.Top = 30
+    $chckSearchCrawlRule.Top = 20
     $chckSearchCrawlRule.AutoSize = $true;
     $chckSearchCrawlRule.Name = "chckSearchCrawlRule"
     $chckSearchCrawlRule.Checked = $true
@@ -5494,7 +5537,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchCrawlRule);
 
     $chckSearchCrawlerImpact = New-Object System.Windows.Forms.CheckBox
-    $chckSearchCrawlerImpact.Top = 60
+    $chckSearchCrawlerImpact.Top = 40
     $chckSearchCrawlerImpact.AutoSize = $true;
     $chckSearchCrawlerImpact.Name = "chckSearchCrawlerImpact"
     $chckSearchCrawlerImpact.Checked = $true
@@ -5502,7 +5545,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchCrawlerImpact);
 
     $chckSearchFileTypes = New-Object System.Windows.Forms.CheckBox
-    $chckSearchFileTypes.Top = 90
+    $chckSearchFileTypes.Top = 60
     $chckSearchFileTypes.AutoSize = $true;
     $chckSearchFileTypes.Name = "chckSearchFileTypes"
     $chckSearchFileTypes.Checked = $false
@@ -5510,7 +5553,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchFileTypes);
 
     $chckSearchIndexPart = New-Object System.Windows.Forms.CheckBox
-    $chckSearchIndexPart.Top = 120
+    $chckSearchIndexPart.Top = 80
     $chckSearchIndexPart.AutoSize = $true;
     $chckSearchIndexPart.Name = "chckSearchIndexPart"
     $chckSearchIndexPart.Checked = $true
@@ -5518,7 +5561,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchIndexPart);
 
     $chckManagedProp = New-Object System.Windows.Forms.CheckBox
-    $chckManagedProp.Top = 150
+    $chckManagedProp.Top = 100
     $chckManagedProp.AutoSize = $true;
     $chckManagedProp.Name = "chckManagedProp"
     $chckManagedProp.Checked = $false
@@ -5526,7 +5569,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckManagedProp);
 
     $chckSearchResultSources = New-Object System.Windows.Forms.CheckBox
-    $chckSearchResultSources.Top = 180
+    $chckSearchResultSources.Top = 120
     $chckSearchResultSources.AutoSize = $true;
     $chckSearchResultSources.Name = "chckSearchResultSources"
     $chckSearchResultSources.Checked = $true
@@ -5534,7 +5577,7 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchResultSources);
 
     $chckSearchSA = New-Object System.Windows.Forms.CheckBox
-    $chckSearchSA.Top = 210
+    $chckSearchSA.Top = 140
     $chckSearchSA.AutoSize = $true;
     $chckSearchSA.Name = "chckSearchSA"
     $chckSearchSA.Checked = $true
@@ -5542,30 +5585,30 @@ function DisplayGUI()
     $panelSearch.Controls.Add($chckSearchSA);
 
     $chckSearchTopo = New-Object System.Windows.Forms.CheckBox
-    $chckSearchTopo.Top = 240
+    $chckSearchTopo.Top = 160
     $chckSearchTopo.AutoSize = $true
     $chckSearchTopo.Name = "chckSearchTopo"
     $chckSearchTopo.Checked = $true
     $chckSearchTopo.Text = "Topology"
     $panelSearch.Controls.Add($chckSearchTopo);
 
-    $form.Controls.Add($panelSearch)
+    $panelMain.Controls.Add($panelSearch)
     #endregion
 
     #region Web Applications
     $labelWebApplications = New-Object System.Windows.Forms.Label
     $labelWebApplications.Text = "Web Applications:"
     $labelWebApplications.AutoSize = $true
-    $labelWebApplications.Top = 340 + $topBannerHeight
+    $labelWebApplications.Top = $panelSearch.Height + $topBannerHeight + 40
     $labelWebApplications.Left = $secondColumnLeft
     $labelWebApplications.Font = [System.Drawing.Font]::new($labelWebApplications.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelWebApplications)
+    $panelMain.Controls.Add($labelWebApplications)
 
     $panelWebApp = New-Object System.Windows.Forms.Panel
-    $panelWebApp.Top = 400 + $topBannerHeight
+    $panelWebApp.Top = $panelSearch.Height + $topBannerHeight + 70
     $panelWebApp.Left = $secondColumnLeft
     $panelWebApp.AutoSize = $true
-    $panelWebApp.Width = 400
+    $panelWebApp.Width = 220
     $panelWebApp.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckWAAppDomain = New-Object System.Windows.Forms.CheckBox
@@ -5577,7 +5620,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAAppDomain);
 
     $chckWABlockedFiles = New-Object System.Windows.Forms.CheckBox
-    $chckWABlockedFiles.Top = 30
+    $chckWABlockedFiles.Top = 20
     $chckWABlockedFiles.AutoSize = $true;
     $chckWABlockedFiles.Name = "chckWABlockedFiles"
     $chckWABlockedFiles.Checked = $true
@@ -5585,7 +5628,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWABlockedFiles);
 
     $chckWAExtension = New-Object System.Windows.Forms.CheckBox
-    $chckWAExtension.Top = 60
+    $chckWAExtension.Top = 40
     $chckWAExtension.AutoSize = $true;
     $chckWAExtension.Name = "chckWAExtension"
     $chckWAExtension.Checked = $true
@@ -5593,7 +5636,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAExtension);
 
     $chckWAGeneral = New-Object System.Windows.Forms.CheckBox
-    $chckWAGeneral.Top = 90
+    $chckWAGeneral.Top = 60
     $chckWAGeneral.AutoSize = $true;
     $chckWAGeneral.Name = "chckWAGeneral"
     $chckWAGeneral.Checked = $true
@@ -5601,7 +5644,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAGeneral);
 
     $chckWebAppPerm = New-Object System.Windows.Forms.CheckBox
-    $chckWebAppPerm.Top = 120
+    $chckWebAppPerm.Top = 80
     $chckWebAppPerm.AutoSize = $true
     $chckWebAppPerm.Name = "chckWebAppPerm"
     $chckWebAppPerm.Checked = $true
@@ -5609,7 +5652,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebAppPerm);
 
     $chckWebAppPolicy = New-Object System.Windows.Forms.CheckBox
-    $chckWebAppPolicy.Top = 150
+    $chckWebAppPolicy.Top = 100
     $chckWebAppPolicy.AutoSize = $true;
     $chckWebAppPolicy.Name = "chckWebAppPolicy"
     $chckWebAppPolicy.Checked = $true
@@ -5617,7 +5660,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebAppPolicy);
 
     $chckWAProxyGroup = New-Object System.Windows.Forms.CheckBox
-    $chckWAProxyGroup.Top = 180
+    $chckWAProxyGroup.Top = 120
     $chckWAProxyGroup.AutoSize = $true;
     $chckWAProxyGroup.Name = "chckWAProxyGroup"
     $chckWAProxyGroup.Checked = $true
@@ -5625,7 +5668,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAProxyGroup);
 
     $chckWADeletion = New-Object System.Windows.Forms.CheckBox
-    $chckWADeletion.Top = 210
+    $chckWADeletion.Top = 140
     $chckWADeletion.AutoSize = $true;
     $chckWADeletion.Name = "chckWADeletion"
     $chckWADeletion.Checked = $true
@@ -5633,7 +5676,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWADeletion);
 
     $chckWAThrottling = New-Object System.Windows.Forms.CheckBox
-    $chckWAThrottling.Top = 240
+    $chckWAThrottling.Top = 160
     $chckWAThrottling.AutoSize = $true;
     $chckWAThrottling.Name = "chckWAThrottling"
     $chckWAThrottling.Checked = $true
@@ -5641,7 +5684,7 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWAThrottling);
 
     $chckWebApp = New-Object System.Windows.Forms.CheckBox
-    $chckWebApp.Top = 270
+    $chckWebApp.Top = 180
     $chckWebApp.AutoSize = $true;
     $chckWebApp.Name = "chckWebApp"
     $chckWebApp.Checked = $true
@@ -5649,30 +5692,30 @@ function DisplayGUI()
     $panelWebApp.Controls.Add($chckWebApp);
 
     $chckWAWorkflow = New-Object System.Windows.Forms.CheckBox
-    $chckWAWorkflow.Top = 300
+    $chckWAWorkflow.Top = 200
     $chckWAWorkflow.AutoSize = $true;
     $chckWAWorkflow.Name = "chckWAWorkflow"
     $chckWAWorkflow.Checked = $true
     $chckWAWorkflow.Text = "Workflow Settings"
     $panelWebApp.Controls.Add($chckWAWorkflow);
 
-    $form.Controls.Add($panelWebApp)
+    $panelMain.Controls.Add($panelWebApp)
     #endregion
 
     #region Customization
     $labelCustomization = New-Object System.Windows.Forms.Label
     $labelCustomization.Text = "Customization:"
     $labelCustomization.AutoSize = $true
-    $labelCustomization.Top = 760 + $topBannerHeight
+    $labelCustomization.Top = $panelWebApp.Top + $panelWebApp.Height + 10
     $labelCustomization.Left = $secondColumnLeft
     $labelCustomization.Font = [System.Drawing.Font]::new($labelCustomization.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelCustomization)
+    $panelMain.Controls.Add($labelCustomization)
 
     $panelCustomization = New-Object System.Windows.Forms.Panel
-    $panelCustomization.Top = 830 + $topBannerHeight
+    $panelCustomization.Top = $panelWebApp.Top + $panelWebApp.Height + 40
     $panelCustomization.Left = $secondColumnLeft
-    $panelCustomization.AutoSize = $true
-    $panelCustomization.Width = 400
+    $panelCustomization.Height = 80
+    $panelCustomization.Width = 220
     $panelCustomization.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
     $chckAppCatalog = New-Object System.Windows.Forms.CheckBox
@@ -5684,7 +5727,7 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppCatalog);
 
     $chckAppDomain = New-Object System.Windows.Forms.CheckBox
-    $chckAppDomain.Top = 30
+    $chckAppDomain.Top = 20
     $chckAppDomain.AutoSize = $true;
     $chckAppDomain.Name = "chckAppDomain"
     $chckAppDomain.Checked = $true
@@ -5692,7 +5735,7 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppDomain);
 
     $chckAppStore = New-Object System.Windows.Forms.CheckBox
-    $chckAppStore.Top = 60
+    $chckAppStore.Top = 40
     $chckAppStore.AutoSize = $true
     $chckAppStore.Name = "chckAppStore"
     $chckAppStore.Checked = $true
@@ -5700,27 +5743,27 @@ function DisplayGUI()
     $panelCustomization.Controls.Add($chckAppStore);
 
     $chckFarmSolution = New-Object System.Windows.Forms.CheckBox
-    $chckFarmSolution.Top = 90
+    $chckFarmSolution.Top = 60
     $chckFarmSolution.AutoSize = $true;
     $chckFarmSolution.Name = "chckFarmSolution"
     $chckFarmSolution.Checked = $true
     $chckFarmSolution.Text = "Farm Solutions"
     $panelCustomization.Controls.Add($chckFarmSolution);
 
-    $form.Controls.Add($panelCustomization)
+    $panelMain.Controls.Add($panelCustomization)
     #endregion
 
     #region Configuration
     $labelConfiguration = New-Object System.Windows.Forms.Label
     $labelConfiguration.Text = "Configuration:"
     $labelConfiguration.AutoSize = $true
-    $labelConfiguration.Top = 220 + $topBannerHeight
+    $labelConfiguration.Top = $topBannerHeight
     $labelConfiguration.Left = $thirdColumnLeft
     $labelConfiguration.Font = [System.Drawing.Font]::new($labelConfiguration.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($labelConfiguration)
+    $panelMain.Controls.Add($labelConfiguration)
 
     $panelConfig = New-Object System.Windows.Forms.Panel
-    $panelConfig.Top = 280 + $topBannerHeight
+    $panelConfig.Top = 30 + $topBannerHeight
     $panelConfig.Left = $thirdColumnLeft
     $panelConfig.AutoSize = $true
     $panelConfig.Width = 400
@@ -5735,7 +5778,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAAM);
 
     $chckAlternateUrl = New-Object System.Windows.Forms.CheckBox
-    $chckAlternateUrl.Top = 30
+    $chckAlternateUrl.Top = 20
     $chckAlternateUrl.AutoSize = $true;
     $chckAlternateUrl.Name = "chckAlternateUrl"
     $chckAlternateUrl.Checked = $true
@@ -5743,7 +5786,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAlternateUrl);
 
     $chckAntivirus = New-Object System.Windows.Forms.CheckBox
-    $chckAntivirus.Top = 60
+    $chckAntivirus.Top = 40
     $chckAntivirus.AutoSize = $true;
     $chckAntivirus.Name = "chckAntivirus"
     $chckAntivirus.Checked = $true
@@ -5751,7 +5794,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAntivirus);
 
     $chckBlobCache = New-Object System.Windows.Forms.CheckBox
-    $chckBlobCache.Top = 90
+    $chckBlobCache.Top = 60
     $chckBlobCache.AutoSize = $true;
     $chckBlobCache.Name = "chckBlobCache"
     $chckBlobCache.Checked = $true
@@ -5759,7 +5802,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckBlobCache);
 
     $chckCacheAccounts = New-Object System.Windows.Forms.CheckBox
-    $chckCacheAccounts.Top = 120
+    $chckCacheAccounts.Top = 80
     $chckCacheAccounts.AutoSize = $true;
     $chckCacheAccounts.Name = "chckCacheAccounts"
     $chckCacheAccounts.Checked = $true
@@ -5767,7 +5810,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckCacheAccounts);
 
     $chckDiagLogging = New-Object System.Windows.Forms.CheckBox
-    $chckDiagLogging.Top = 150
+    $chckDiagLogging.Top = 100
     $chckDiagLogging.AutoSize = $true;
     $chckDiagLogging.Name = "chckDiagLogging"
     $chckDiagLogging.Checked = $true
@@ -5775,7 +5818,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDiagLogging);
 
     $chckDistributedCache= New-Object System.Windows.Forms.CheckBox
-    $chckDistributedCache.Top = 180
+    $chckDistributedCache.Top = 120
     $chckDistributedCache.AutoSize = $true;
     $chckDistributedCache.Name = "chckDistributedCache"
     $chckDistributedCache.Checked = $false
@@ -5783,7 +5826,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDistributedCache);
 
     $chckFarmConfig = New-Object System.Windows.Forms.CheckBox
-    $chckFarmConfig.Top = 210
+    $chckFarmConfig.Top = 140
     $chckFarmConfig.AutoSize = $true;
     $chckFarmConfig.Name = "chckFarmConfig"
     $chckFarmConfig.Checked = $true
@@ -5791,7 +5834,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmConfig);
 
     $chckFarmPropBag = New-Object System.Windows.Forms.CheckBox
-    $chckFarmPropBag.Top = 240
+    $chckFarmPropBag.Top = 160
     $chckFarmPropBag.AutoSize = $true;
     $chckFarmPropBag.Name = "chckFarmPropBag"
     $chckFarmPropBag.Checked = $true
@@ -5799,7 +5842,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmPropBag);
 
     $chckFeature = New-Object System.Windows.Forms.CheckBox
-    $chckFeature.Top = 270
+    $chckFeature.Top = 180
     $chckFeature.AutoSize = $true;
     $chckFeature.Name = "chckFeature"
     $chckFeature.Checked = $false
@@ -5807,7 +5850,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFeature);
 
     $chckHealth = New-Object System.Windows.Forms.CheckBox
-    $chckHealth.Top = 300
+    $chckHealth.Top = 200
     $chckHealth.AutoSize = $true;
     $chckHealth.Name = "chckHealth"
     $chckHealth.Checked = $true
@@ -5815,7 +5858,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckHealth);
 
     $chckIRM = New-Object System.Windows.Forms.CheckBox
-    $chckIRM.Top = 330
+    $chckIRM.Top = 220
     $chckIRM.AutoSize = $true;
     $chckIRM.Name = "chckIRM"
     $chckIRM.Checked = $true
@@ -5823,7 +5866,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckIRM);
 
     $chckManagedPaths = New-Object System.Windows.Forms.CheckBox
-    $chckManagedPaths.Top = 360
+    $chckManagedPaths.Top = 240
     $chckManagedPaths.AutoSize = $true;
     $chckManagedPaths.Name = "chckManagedPaths"
     $chckManagedPaths.Checked = $true
@@ -5831,7 +5874,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckManagedPaths);
 
     $chckOOS = New-Object System.Windows.Forms.CheckBox
-    $chckOOS.Top = 390
+    $chckOOS.Top = 260
     $chckOOS.AutoSize = $true;
     $chckOOS.Name = "chckOOS"
     $chckOOS.Checked = $false
@@ -5839,7 +5882,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckOOS);
 
     $chckOutgoingEmail = New-Object System.Windows.Forms.CheckBox
-    $chckOutgoingEmail.Top = 420
+    $chckOutgoingEmail.Top = 280
     $chckOutgoingEmail.AutoSize = $true;
     $chckOutgoingEmail.Name = "chckOutgoingEmail"
     $chckOutgoingEmail.Checked = $true
@@ -5847,7 +5890,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckOutgoingEmail);
 
     $chckServiceAppPool = New-Object System.Windows.Forms.CheckBox
-    $chckServiceAppPool.Top = 450
+    $chckServiceAppPool.Top = 300
     $chckServiceAppPool.AutoSize = $true;
     $chckServiceAppPool.Name = "chckServiceAppPool"
     $chckServiceAppPool.Checked = $true
@@ -5855,7 +5898,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceAppPool);
 
     $chckServiceInstance = New-Object System.Windows.Forms.CheckBox
-    $chckServiceInstance.Top = 480
+    $chckServiceInstance.Top = 320
     $chckServiceInstance.AutoSize = $true;
     $chckServiceInstance.Name = "chckServiceInstance"
     $chckServiceInstance.Checked = $true
@@ -5863,7 +5906,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceInstance);
 
     $chckSessionState= New-Object System.Windows.Forms.CheckBox
-    $chckSessionState.Top = 510
+    $chckSessionState.Top = 340
     $chckSessionState.AutoSize = $true;
     $chckSessionState.Name = "chckSessionState"
     $chckSessionState.Checked = $true
@@ -5871,7 +5914,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckSessionState);
 
     $chckDatabaseAAG= New-Object System.Windows.Forms.CheckBox
-    $chckDatabaseAAG.Top = 540
+    $chckDatabaseAAG.Top = 360
     $chckDatabaseAAG.AutoSize = $true;
     $chckDatabaseAAG.Name = "chckDatabaseAAG"
     $chckDatabaseAAG.Checked = $false
@@ -5879,27 +5922,27 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDatabaseAAG);
 
     $chckTimerJob = New-Object System.Windows.Forms.CheckBox
-    $chckTimerJob.Top = 570
+    $chckTimerJob.Top = 380
     $chckTimerJob.AutoSize = $true;
     $chckTimerJob.Name = "chckTimerJob"
     $chckTimerJob.Checked = $false
     $chckTimerJob.Text = "Timer Job States"
     $panelConfig.Controls.Add($chckTimerJob);
 
-    $form.Controls.Add($panelConfig)
+    $panelMain.Controls.Add($panelConfig)
     #endregion
 
     #region User Profile Service
     $lblUPS = New-Object System.Windows.Forms.Label
-    $lblUPS.Top = $topBannerHeight
+    $lblUPS.Top = $panelConfig.Height + $topBannerHeight + 40
     $lblUPS.Text = "User Profile:"
     $lblUPS.AutoSize = $true
     $lblUPS.Left = $thirdColumnLeft
     $lblUPS.Font = [System.Drawing.Font]::new($lblUPS.Font.Name, 14, [System.Drawing.FontStyle]::Bold)
-    $form.Controls.Add($lblUPS)
+    $panelMain.Controls.Add($lblUPS)
 
     $panelUPS = New-Object System.Windows.Forms.Panel
-    $panelUPS.Top = 50 + $topBannerHeight
+    $panelUPS.Top = $panelConfig.Height + $topBannerHeight + 70
     $panelUPS.Left = $thirdColumnLeft
     $panelUPS.AutoSize = $true
     $panelUPS.Width = 400
@@ -5908,13 +5951,13 @@ function DisplayGUI()
     $chckUPSProp = New-Object System.Windows.Forms.CheckBox
     $chckUPSProp.Top = 0
     $chckUPSProp.AutoSize = $true;
-    $chckUPSProp.Name = "chckManagedProp"
+    $chckUPSProp.Name = "chckUPSProp"
     $chckUPSProp.Checked = $false
     $chckUPSProp.Text = "Profile Properties"
     $panelUPS.Controls.Add($chckUPSProp);
 
     $chckUPSSection = New-Object System.Windows.Forms.CheckBox
-    $chckUPSSection.Top = 30
+    $chckUPSSection.Top = 20
     $chckUPSSection.AutoSize = $true
     $chckUPSSection.Name = "chckUPSSection"
     $chckUPSSection.Checked = $false
@@ -5922,7 +5965,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSSection);
 
     $chckUPSSync = New-Object System.Windows.Forms.CheckBox
-    $chckUPSSync.Top = 60
+    $chckUPSSync.Top = 40
     $chckUPSSync.AutoSize = $true;
     $chckUPSSync.Name = "chckUPSSync"
     $chckUPSSync.Checked = $true
@@ -5930,7 +5973,7 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSSync);
 
     $chckUPSA = New-Object System.Windows.Forms.CheckBox
-    $chckUPSA.Top = 90
+    $chckUPSA.Top = 60
     $chckUPSA.AutoSize = $true;
     $chckUPSA.Name = "chckUPSA"
     $chckUPSA.Checked = $true
@@ -5938,14 +5981,14 @@ function DisplayGUI()
     $panelUPS.Controls.Add($chckUPSA);
 
     $chckUPSPermissions = New-Object System.Windows.Forms.CheckBox
-    $chckUPSPermissions.Top = 120
+    $chckUPSPermissions.Top = 80
     $chckUPSPermissions.AutoSize = $true;
     $chckUPSPermissions.Name = "chckUPSPermissions"
     $chckUPSPermissions.Checked = $true
     $chckUPSPermissions.Text = "User Profile Service Permissions"
     $panelUPS.Controls.Add($chckUPSPermissions);
 
-    $form.Controls.Add($panelUPS)
+    $panelMain.Controls.Add($panelUPS)
     #endregion
 
     #region Extraction Modes
@@ -5956,94 +5999,110 @@ function DisplayGUI()
     #region Top Menu
     $panelMenu = New-Object System.Windows.Forms.Panel
     $panelMenu.Height = $topBannerHeight
-    $panelMenu.Width = $form.width
+    $panelMenu.Width = $form.Width
     $panelMenu.BackColor = [System.Drawing.Color]::Silver
 
     $lblMode = New-Object System.Windows.Forms.Label
     $lblMode.Top = 25
     $lblMode.Text = "Extraction Modes:"
     $lblMode.AutoSize = $true
-    $lblMode.Left = 20
+    $lblMode.Left = 10
     $lblMode.Font = [System.Drawing.Font]::new($lblMode.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblMode)
 
     $btnLite = New-Object System.Windows.Forms.Button
-    $btnLite.AutoSize = $true
+    $btnLite.Width = 50
     $btnLite.Top = 20
-    $btnLite.Left = 220
+    $btnLite.Left = 120
     $btnLite.Text = "Lite"
     $btnLite.Add_Click({SelectComponentsForMode(1)})
     $panelMenu.Controls.Add($btnLite);
 
     $btnDefault = New-Object System.Windows.Forms.Button
-    $btnDefault.AutoSize = $true
-    $btnDefault.top = 20
-    $btnDefault.Left = 300
+    $btnDefault.Width = 50
+    $btnDefault.Top = 20
+    $btnDefault.Left = 170
     $btnDefault.Text = "Default"
     $btnDefault.Add_Click({SelectComponentsForMode(2)})
     $panelMenu.Controls.Add($btnDefault);
 
     $btnFull = New-Object System.Windows.Forms.Button
-    $btnFull.AutoSize = $true
+    $btnFull.Width = 50
     $btnFull.Top = 20
-    $btnFull.Left = 400
+    $btnFull.Left = 220
     $btnFull.Text = "Full"
     $btnFull.Add_Click({SelectComponentsForMode(3)})
     $panelMenu.Controls.Add($btnFull);
 
-    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
-    $chckStandAlone.AutoSize = $true
-    $chckStandAlone.Top = 5
-    $chckStandAlone.Left = 650
-    $chckStandAlone.Text = "Standalone"
-    $panelMenu.Controls.Add($chckStandAlone)
-
-    $chckAzure = New-Object System.Windows.Forms.CheckBox
-    $chckAzure.AutoSize = $true
-    $chckAzure.Top = 35
-    $chckAzure.Left = 650
-    $chckAzure.Text = "Azure"
-    $panelMenu.Controls.Add($chckAzure)
-
     $btnClear = New-Object System.Windows.Forms.Button
-    $btnClear.AutoSize = $true
+    $btnClear.Width = 90
     $btnClear.Top = 20
-    $btnClear.Left = 500
+    $btnClear.Left = 270
     $btnClear.BackColor = [System.Drawing.Color]::IndianRed
     $btnClear.ForeColor = [System.Drawing.Color]::White
     $btnClear.Text = "Unselect All"
     $btnClear.Add_Click({SelectComponentsForMode(0)})
     $panelMenu.Controls.Add($btnClear);
 
+    $chckStandAlone = New-Object System.Windows.Forms.CheckBox
+    $chckStandAlone.Width = 90
+    $chckStandAlone.Top = 5
+    $chckStandAlone.Left = 370
+    $chckStandAlone.Text = "Standalone"
+    $panelMenu.Controls.Add($chckStandAlone)
+
+    $chckAzure = New-Object System.Windows.Forms.CheckBox
+    $chckAzure.Width = 90
+    $chckAzure.Top = 35
+    $chckAzure.Left = 370
+    $chckAzure.Text = "Azure"
+    $panelMenu.Controls.Add($chckAzure)
+
     $lblFarmAccount = New-Object System.Windows.Forms.Label
     $lblFarmAccount.Text = "Farm Account:"
-    $lblFarmAccount.Top = 5
-    $lblFarmAccount.Left = 800
-    $lblFarmAccount.AutoSize = $true
+    $lblFarmAccount.Top = 10
+    $lblFarmAccount.Left = 460
+    $lblFarmAccount.Width = 90
+    $lblFarmAccount.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblFarmAccount.Font = [System.Drawing.Font]::new($lblFarmAccount.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblFarmAccount)
 
     $txtFarmAccount = New-Object System.Windows.Forms.Textbox
     $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
-    $txtFarmAccount.Top = 35
-    $txtFarmAccount.Left = 830
-    $txtFarmAccount.Width = 200
-    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 12)
+    $txtFarmAccount.Top = 5
+    $txtFarmAccount.Left = 550
+    $txtFarmAccount.Width = 150
+    $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 10)
     $panelMenu.Controls.Add($txtFarmAccount)
 
     $lblPassword = New-Object System.Windows.Forms.Label
     $lblPassword.Text = "Password:"
-    $lblPassword.Top = 5
-    $lblPassword.Left = 1050
-    $lblPassword.AutoSize = $true
+    $lblPassword.Top = 47
+    $lblPassword.Left = 460
+    $lblPassword.Width = 90
+    $lblPassword.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblPassword.Font = [System.Drawing.Font]::new($lblPassword.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
     $panelMenu.Controls.Add($lblPassword)
+
+    $txtPassword = New-Object System.Windows.Forms.Textbox
+    $txtPassword.Top = 40
+    $txtPassword.Left = 550
+    $txtPassword.Width = 150
+    $txtPassword.PasswordChar = "*"
+    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 10)
+    $txtPassword.Add_KeyDown({
+        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
+        {
+            $btnExtract.PerformClick()
+        }
+    })
+    $panelMenu.Controls.Add($txtPassword)
 
     $btnExtract = New-Object System.Windows.Forms.Button
     $btnExtract.Width = 178
     $btnExtract.Height = 70
     $btnExtract.Top = 0
-    $btnExtract.Left = 1300
+    $btnExtract.Left = $form.Width - 200
     $btnExtract.BackColor = [System.Drawing.Color]::ForestGreen
     $btnExtract.ForeColor = [System.Drawing.Color]::White
     $btnExtract.Text = "Start Extraction"
@@ -6060,25 +6119,12 @@ function DisplayGUI()
     })
     $panelMenu.Controls.Add($btnExtract);
 
-
-    $txtPassword = New-Object System.Windows.Forms.Textbox
-    $txtPassword.Top = 35
-    $txtPassword.Left = 1080
-    $txtPassword.Width = 200
-    $txtPassword.PasswordChar = "*"
-    $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 12)
-    $txtPassword.Add_KeyDown({
-        if($_.KeyCode -eq [System.Windows.Forms.Keys]::Enter)
-        {
-            $btnExtract.PerformClick()
-        }
-    })
-    $panelMenu.Controls.Add($txtPassword)
-
-    $form.Controls.Add($panelMenu);
+    $panelMain.Controls.Add($panelMenu);
     #endregion
 
-    $form.Text = "ReverseDSC for SharePoint - v2.6.0.0"
+    $panelMain.AutoScroll = $true
+    $form.Controls.Add($panelMain)
+    $form.Text = "ReverseDSC for SharePoint - v" + $Script:version
     $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
     $form.ShowDialog()
 }
@@ -6095,6 +6141,7 @@ if($null -ne $sharePointSnapin)
     else
     {
         [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
+        [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null
         DisplayGUI
     }
 }
