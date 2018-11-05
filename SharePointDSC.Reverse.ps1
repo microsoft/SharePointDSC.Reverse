@@ -1141,11 +1141,11 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            if($results.URl.Contains(":") -and $results.Port -and $results.Port -ne 80)
+            if($results.WebAppURl.Contains(":") -and $results.Port -and $results.Port -ne 80)
             {
                 $results.Remove("Port")
             }
-            elseif(!$results.Url.Contains(":") -and !$results.Port)
+            elseif(!$results.WebAppUrl.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
@@ -1162,7 +1162,7 @@ function Read-SPWebApplications (){
             if($Script:ExtractionModeValue -ge 2)
             {
                 Write-Host "    -> Scanning SharePoint Designer Settings"
-                Read-SPDesignerSettings($spWebApplications.Url.ToString(), "WebApplication", $spWebApp.Name.Replace(" ", ""))
+                Read-SPDesignerSettings -WebAppUrl $results.WebAppUrl.ToString() -Scope "WebApplication" -WebAppName $spWebApp.Name.Replace(" ", "")
             }
 
             <# SPWebApplication Feature Section #>
@@ -4238,26 +4238,26 @@ function Read-SPExcelServiceApp()
 }
 
 <# Nik20170106 - Read the Designer Settings of either the Site Collection or the Web Application #>
-function Read-SPDesignerSettings($receiver)
+function Read-SPDesignerSettings($WebAppUrl, $Scope, $WebAppName)
 {
     $module = Resolve-Path ($Script:SPDSCPath + "\DSCResources\MSFT_SPDesignerSettings\MSFT_SPDesignerSettings.psm1")
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
 
-    $params.Url = $receiver[0]
-    $params.SettingsScope = $receiver[1]
+    $params.WebAppUrl = $WebAppUrl
+    $params.SettingsScope = $Scope
     $results = Get-TargetResource @params
 
     <# Nik20170106 - The logic here differs from other Read functions due to a bug in the Designer Resource that doesn't properly obtains a reference to the Site Collection. #>
     if($null -ne $results)
     {
-        $Script:dscConfigContent += "        SPDesignerSettings " + $receiver[1] + [System.Guid]::NewGuid().ToString() + "`r`n"
+        $Script:dscConfigContent += "        SPDesignerSettings " + $Scope + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Repair-Credentials -results $results
         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        if($receiver.Length -eq 3)
+        if($webAppName)
         {
-            $Script:dscConfigContent += "            DependsOn = `"[SP" + $receiver[1].Replace("Collection", "") + "]" + $receiver[2] + "`";`r`n"
+            $Script:dscConfigContent += "            DependsOn = `"[SP" + $scope.Replace("Collection", "") + "]" + $WebAppName + "`";`r`n"
         }
         $Script:dscConfigContent += "        }`r`n"
     }
@@ -4325,7 +4325,7 @@ function Read-SPWebAppGeneralSettings()
     $webApps = Get-SPWebApplication
     foreach($webApp in $webApps)
     {
-        $params.Url = $webApp.Url
+        $params.WebAppUrl = $webApp.Url
         $Script:dscConfigContent += "        SPWebAppGeneralSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
 
@@ -4354,7 +4354,7 @@ function Read-SPWebAppBlockedFileTypes()
     $webApps = Get-SPWebApplication
     foreach($webApp in $webApps)
     {
-        $params.Url = $webApp.Url
+        $params.WebAppUrl = $webApp.Url
         $Script:dscConfigContent += "        SPWebAppBlockedFileTypes " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Get-TargetResource @params
