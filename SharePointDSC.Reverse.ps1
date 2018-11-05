@@ -1523,7 +1523,7 @@ function Read-SPSitesAndWebs ()
                             running at least PowerShell v5 before reading the Site Collection level SPDesigner settings. #>
                 if($PSVersionTable.PSVersion.Major -ge 5 -and $Script:ExtractionModeValue -ge 2)
                 {
-                    Read-SPDesignerSettings($spSite.Url, "SiteCollection")
+                    Read-SPDesignerSettings -WebAppUrl $spSite.Url -Scope "SiteCollection"
                 }
 
                 Read-SPSiteUrl($spSite.Url)
@@ -2760,7 +2760,7 @@ function Read-SPWebAppWorkflowSettings()
         {
             if($wa -ne $null)
             {
-                $params.Url = $wa.Url
+                $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppWorkflowSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
@@ -2795,7 +2795,7 @@ function Read-SPWebAppThrottlingSettings()
         {
             if($wa -ne $null)
             {
-                $params.Url = $wa.Url
+                $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppThrottlingSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
@@ -2831,7 +2831,7 @@ function Read-SPWebAppSiteUseAndDeletion()
         {
             if($wa -ne $null)
             {
-                $params.Url = $wa.Url
+                $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppSiteUseAndDeletion " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
