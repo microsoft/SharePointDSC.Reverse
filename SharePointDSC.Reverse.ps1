@@ -4104,7 +4104,6 @@ function Read-SPFarmAdministrators()
         $Script:dscConfigContent += "        SPFarmAdministrators " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Get-TargetResource @params
-        $results.Name = "SPFarmAdministrators"
         $results = Repair-Credentials -results $results
 
         $results.Members = Set-SPFarmAdministrators $results.Members
