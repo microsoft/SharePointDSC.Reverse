@@ -938,7 +938,7 @@ function Read-SPInstall
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -Description "SharePoint Product Key"
     $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
-
+    $Script:dscConfigContent += "                IsSingleInstance = `"Yes`";`r`n"
     $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
     $Script:dscConfigContent += "            }`r`n"
     $Script:dscConfigContent += "        }`r`n"
@@ -954,7 +954,7 @@ function Read-SPInstallPrereqs
     $Script:dscConfigContent += "                InstallerPath = `$ConfigurationData.NonNodeData.SPPrereqsInstallerPath;`r`n"
     $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
-
+    $Script:dscConfigContent += "                IsSingleInstance = `"Yes`";`r`n"
     $Script:dscConfigContent += "                PSDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_") + ";`r`n"
 
     $Script:dscConfigContent += "            }`r`n"
@@ -3708,6 +3708,7 @@ function Read-SPSearchResultSource()
                             $results.Query = $resultSource.QueryTransform.QueryTemplate.Replace("`"","'")
                             $results.ProviderType = $provider.Name
                             $results.Ensure = "Present"
+                            $results.ScopeUrl = "Global"
                             if($resultSource.ConnectionUrlTemplate)
                             {
                                 $results.ConnectionUrl = $resultSource.ConnectionUrlTemplate
@@ -3755,6 +3756,7 @@ function Read-SPSearchResultSource()
                                                     $currentContent += "        {`r`n"
                                                     $params.SearchServiceAppName = $serviceName
                                                     $params.Name = $source.Name
+                                                    $params.ScopeName = "SPWeb"
                                                     $params.ScopeUrl = $web.Url
                                                     $results = Get-TargetResource @params
 
