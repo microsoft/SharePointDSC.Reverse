@@ -946,7 +946,7 @@ function Read-SPInstall
 
 function Read-SPInstallPrereqs
 {
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$False" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
@@ -1811,7 +1811,7 @@ function Read-SPServiceInstance($Servers)
     foreach($Server in $Servers)
     {
         Write-Host "Scanning SPServiceInstance on {$Server}"
-        $serviceInstancesOnCurrentServer = Get-SPServiceInstance -All | Where-Object{$_.Server.Name -eq $Server} | Sort-Object -Property TypeName
+        $serviceInstancesOnCurrentServer = Get-SPServiceInstance -Server $Server | Sort-Object -Property TypeName
         $serviceStatuses = @()
         $ensureValue = "Present"
 
