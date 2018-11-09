@@ -5770,16 +5770,8 @@ function DisplayGUI()
     $panelConfig.Width = 400
     $panelConfig.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 
-    $chckAAM = New-Object System.Windows.Forms.CheckBox
-    $chckAAM.Top = 0
-    $chckAAM.AutoSize = $true;
-    $chckAAM.Name = "chckAAM"
-    $chckAAM.Checked = $true
-    $chckAAM.Text = "Alternate Access Mappings"
-    $panelConfig.Controls.Add($chckAAM);
-
     $chckAlternateUrl = New-Object System.Windows.Forms.CheckBox
-    $chckAlternateUrl.Top = 20
+    $chckAlternateUrl.Top = 0
     $chckAlternateUrl.AutoSize = $true;
     $chckAlternateUrl.Name = "chckAlternateUrl"
     $chckAlternateUrl.Checked = $true
@@ -5787,7 +5779,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAlternateUrl);
 
     $chckAntivirus = New-Object System.Windows.Forms.CheckBox
-    $chckAntivirus.Top = 40
+    $chckAntivirus.Top = 20
     $chckAntivirus.AutoSize = $true;
     $chckAntivirus.Name = "chckAntivirus"
     $chckAntivirus.Checked = $true
@@ -5795,7 +5787,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckAntivirus);
 
     $chckBlobCache = New-Object System.Windows.Forms.CheckBox
-    $chckBlobCache.Top = 60
+    $chckBlobCache.Top = 40
     $chckBlobCache.AutoSize = $true;
     $chckBlobCache.Name = "chckBlobCache"
     $chckBlobCache.Checked = $true
@@ -5803,7 +5795,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckBlobCache);
 
     $chckCacheAccounts = New-Object System.Windows.Forms.CheckBox
-    $chckCacheAccounts.Top = 80
+    $chckCacheAccounts.Top = 60
     $chckCacheAccounts.AutoSize = $true;
     $chckCacheAccounts.Name = "chckCacheAccounts"
     $chckCacheAccounts.Checked = $true
@@ -5811,7 +5803,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckCacheAccounts);
 
     $chckDiagLogging = New-Object System.Windows.Forms.CheckBox
-    $chckDiagLogging.Top = 100
+    $chckDiagLogging.Top = 80
     $chckDiagLogging.AutoSize = $true;
     $chckDiagLogging.Name = "chckDiagLogging"
     $chckDiagLogging.Checked = $true
@@ -5819,15 +5811,15 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDiagLogging);
 
     $chckDistributedCache= New-Object System.Windows.Forms.CheckBox
-    $chckDistributedCache.Top = 120
+    $chckDistributedCache.Top = 100
     $chckDistributedCache.AutoSize = $true;
     $chckDistributedCache.Name = "chckDistributedCache"
-    $chckDistributedCache.Checked = $false
+    $chckDistributedCache.Checked = $true
     $chckDistributedCache.Text = "Distributed Cache Service"
     $panelConfig.Controls.Add($chckDistributedCache);
 
     $chckFarmConfig = New-Object System.Windows.Forms.CheckBox
-    $chckFarmConfig.Top = 140
+    $chckFarmConfig.Top = 120
     $chckFarmConfig.AutoSize = $true;
     $chckFarmConfig.Name = "chckFarmConfig"
     $chckFarmConfig.Checked = $true
@@ -5835,7 +5827,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmConfig);
 
     $chckFarmPropBag = New-Object System.Windows.Forms.CheckBox
-    $chckFarmPropBag.Top = 160
+    $chckFarmPropBag.Top = 140
     $chckFarmPropBag.AutoSize = $true;
     $chckFarmPropBag.Name = "chckFarmPropBag"
     $chckFarmPropBag.Checked = $true
@@ -5843,7 +5835,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFarmPropBag);
 
     $chckFeature = New-Object System.Windows.Forms.CheckBox
-    $chckFeature.Top = 180
+    $chckFeature.Top = 160
     $chckFeature.AutoSize = $true;
     $chckFeature.Name = "chckFeature"
     $chckFeature.Checked = $false
@@ -5851,15 +5843,15 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckFeature);
 
     $chckHealth = New-Object System.Windows.Forms.CheckBox
-    $chckHealth.Top = 200
+    $chckHealth.Top = 180
     $chckHealth.AutoSize = $true;
     $chckHealth.Name = "chckHealth"
-    $chckHealth.Checked = $true
+    $chckHealth.Checked = $false
     $chckHealth.Text = "Health Analyzer Rule States"
     $panelConfig.Controls.Add($chckHealth);
 
     $chckIRM = New-Object System.Windows.Forms.CheckBox
-    $chckIRM.Top = 220
+    $chckIRM.Top = 200
     $chckIRM.AutoSize = $true;
     $chckIRM.Name = "chckIRM"
     $chckIRM.Checked = $true
@@ -5867,7 +5859,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckIRM);
 
     $chckManagedPaths = New-Object System.Windows.Forms.CheckBox
-    $chckManagedPaths.Top = 240
+    $chckManagedPaths.Top = 220
     $chckManagedPaths.AutoSize = $true;
     $chckManagedPaths.Name = "chckManagedPaths"
     $chckManagedPaths.Checked = $true
@@ -5875,15 +5867,15 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckManagedPaths);
 
     $chckOOS = New-Object System.Windows.Forms.CheckBox
-    $chckOOS.Top = 260
+    $chckOOS.Top = 240
     $chckOOS.AutoSize = $true;
     $chckOOS.Name = "chckOOS"
-    $chckOOS.Checked = $false
+    $chckOOS.Checked = $true
     $chckOOS.Text = "Office Online Server Bindings"
     $panelConfig.Controls.Add($chckOOS);
 
     $chckOutgoingEmail = New-Object System.Windows.Forms.CheckBox
-    $chckOutgoingEmail.Top = 280
+    $chckOutgoingEmail.Top = 260
     $chckOutgoingEmail.AutoSize = $true;
     $chckOutgoingEmail.Name = "chckOutgoingEmail"
     $chckOutgoingEmail.Checked = $true
@@ -5891,7 +5883,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckOutgoingEmail);
 
     $chckServiceAppPool = New-Object System.Windows.Forms.CheckBox
-    $chckServiceAppPool.Top = 300
+    $chckServiceAppPool.Top = 280
     $chckServiceAppPool.AutoSize = $true;
     $chckServiceAppPool.Name = "chckServiceAppPool"
     $chckServiceAppPool.Checked = $true
@@ -5899,7 +5891,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceAppPool);
 
     $chckServiceInstance = New-Object System.Windows.Forms.CheckBox
-    $chckServiceInstance.Top = 320
+    $chckServiceInstance.Top = 300
     $chckServiceInstance.AutoSize = $true;
     $chckServiceInstance.Name = "chckServiceInstance"
     $chckServiceInstance.Checked = $true
@@ -5907,7 +5899,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckServiceInstance);
 
     $chckSessionState= New-Object System.Windows.Forms.CheckBox
-    $chckSessionState.Top = 340
+    $chckSessionState.Top = 320
     $chckSessionState.AutoSize = $true;
     $chckSessionState.Name = "chckSessionState"
     $chckSessionState.Checked = $true
@@ -5915,7 +5907,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckSessionState);
 
     $chckDatabaseAAG= New-Object System.Windows.Forms.CheckBox
-    $chckDatabaseAAG.Top = 360
+    $chckDatabaseAAG.Top = 340
     $chckDatabaseAAG.AutoSize = $true;
     $chckDatabaseAAG.Name = "chckDatabaseAAG"
     $chckDatabaseAAG.Checked = $false
@@ -5923,7 +5915,7 @@ function DisplayGUI()
     $panelConfig.Controls.Add($chckDatabaseAAG);
 
     $chckTimerJob = New-Object System.Windows.Forms.CheckBox
-    $chckTimerJob.Top = 380
+    $chckTimerJob.Top = 360
     $chckTimerJob.AutoSize = $true;
     $chckTimerJob.Name = "chckTimerJob"
     $chckTimerJob.Checked = $false
@@ -5994,7 +5986,7 @@ function DisplayGUI()
 
     #region Extraction Modes
     $liteComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckSearchIndexPart, $chckWAAppDomain, $chckSessionState, $chckSAUsage)
-    $defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckDatabaseAAG, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchFileTypes, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSProp, $chckUPSSection, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
+    $defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
     #endregion
 
     #region Top Menu
