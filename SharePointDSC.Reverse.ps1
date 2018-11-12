@@ -5142,6 +5142,12 @@ function Get-SPReverseDSC()
         $deployScriptContent | Out-File $azureDeployScriptPath
     }
 
+    # Generate the Required User Script if the checkbox is selected;
+    if($chckRequiredUsers.Checked)
+    {
+        New-RequiredUsersScript -Location ($OutputDSCPath + "GenerateRequiredUsers.ps1")
+    }
+
     if($Script:ErrorLog)
     {
         $errorLogPath = $OutputDSCPath + "SharePointDSC.Reverse-Errors.log"
@@ -5151,6 +5157,37 @@ function Get-SPReverseDSC()
     <## Wait a second, then open our $outputDSCPath in Windows Explorer so we can review the glorious output. ##>
     Start-Sleep 1
     Invoke-Item -Path $OutputDSCPath
+}
+
+function New-RequiredUsersScript($Location)
+{
+    $content = "Import-Module ActiveDirectory`r`n"
+    $content += "`$RequiredUsers = @("
+
+    foreach($user in $Global:AllUsers)
+    {
+        $currentUser = $user
+        if($user.Contains('\'))
+        {
+            $currentUser = $user.Split('\')[1]
+        }
+        $content += "`"" + $currentUser + "`","
+    }
+    
+    # Remove trailing comma
+    if($content.EndsWith(','))
+    {
+        $content = $content.Remove($content.Length - 1, 1)
+    }
+
+    $content += ")`r`n`r`n"
+    $content += "`$Password = ConvertTo-SecureString -String `"pass@word1`" -AsPlainText -Force`r`n"
+    $content += "foreach(`$user in `$RequiredUsers)`r`n"
+    $content += "{`r`n"
+    $content += "    New-ADUser -Name `$user -Enabled:`$true -AccountPassword `$Password"
+    $content += "}"
+
+    $content | Out-File $location
 }
 
 <## This function defines variables of type Credential for the resulting DSC Configuraton Script. Each variable declared in this method will result in the user being prompted to manually input credentials when executing the resulting script. #>
@@ -6046,15 +6083,23 @@ function DisplayGUI()
 
     $chckAzure = New-Object System.Windows.Forms.CheckBox
     $chckAzure.Width = 90
-    $chckAzure.Top = 35
+    $chckAzure.Top = 25
     $chckAzure.Left = 370
     $chckAzure.Text = "Azure"
     $panelMenu.Controls.Add($chckAzure)
 
+    $chckRequiredUsers = New-Object System.Windows.Forms.CheckBox
+    $chckRequiredUsers.Width = 200
+    $chckRequiredUsers.Top = 45
+    $chckRequiredUsers.Left = 370
+    $chckRequiredUsers.Checked = $true
+    $chckRequiredUsers.Text = "Generate Required Users Script"
+    $panelMenu.Controls.Add($chckRequiredUsers)
+
     $lblFarmAccount = New-Object System.Windows.Forms.Label
     $lblFarmAccount.Text = "Farm Account:"
     $lblFarmAccount.Top = 10
-    $lblFarmAccount.Left = 460
+    $lblFarmAccount.Left = 560
     $lblFarmAccount.Width = 90
     $lblFarmAccount.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblFarmAccount.Font = [System.Drawing.Font]::new($lblFarmAccount.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
@@ -6063,7 +6108,7 @@ function DisplayGUI()
     $txtFarmAccount = New-Object System.Windows.Forms.Textbox
     $txtFarmAccount.Text = "$($env:USERDOMAIN)\$($env:USERNAME)"
     $txtFarmAccount.Top = 5
-    $txtFarmAccount.Left = 550
+    $txtFarmAccount.Left = 650
     $txtFarmAccount.Width = 150
     $txtFarmAccount.Font = [System.Drawing.Font]::new($txtFarmAccount.Font.Name, 10)
     $panelMenu.Controls.Add($txtFarmAccount)
@@ -6071,7 +6116,7 @@ function DisplayGUI()
     $lblPassword = New-Object System.Windows.Forms.Label
     $lblPassword.Text = "Password:"
     $lblPassword.Top = 47
-    $lblPassword.Left = 460
+    $lblPassword.Left = 560
     $lblPassword.Width = 90
     $lblPassword.TextAlign = [System.Drawing.ContentAlignment]::TopRight
     $lblPassword.Font = [System.Drawing.Font]::new($lblPassword.Font.Name, 8, [System.Drawing.FontStyle]::Bold)
@@ -6079,7 +6124,7 @@ function DisplayGUI()
 
     $txtPassword = New-Object System.Windows.Forms.Textbox
     $txtPassword.Top = 40
-    $txtPassword.Left = 550
+    $txtPassword.Left = 650
     $txtPassword.Width = 150
     $txtPassword.PasswordChar = "*"
     $txtPassword.Font = [System.Drawing.Font]::new($txtPassword.Font.Name, 10)
