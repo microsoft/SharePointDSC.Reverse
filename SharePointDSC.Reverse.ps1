@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.0.0.0
+.VERSION 3.2.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,11 +16,11 @@
 
 .RELEASENOTES
 
-* Added a new Graphical User Interface;
+* Fixes an issue where SPFarmPropertyBag is not properly extracting String values;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="3.0.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="3.1.0.0"}
 
 <#
 
@@ -207,6 +207,12 @@ function Orchestrator
                     Write-Host "["$spServer.Name"] Scanning the SharePoint Farm..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPFarm -ServerName $spServer.Address
                 }
+            }
+
+            if($Quiet -or $chckFarmSolution.Checked)
+            {
+                Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarmSolution
             }
 
             #region SPServiceInstance
@@ -464,12 +470,6 @@ function Orchestrator
                     Read-SPFarmAdministrators
                 }
 
-                if($Quiet -or $chckFarmSolution.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPFarmSolution
-                }
-
                 if($Script:ExtractionModeValue -eq 3)
                 {
                     if($Quiet -or $chckHealth.Checked)
@@ -689,21 +689,21 @@ function Orchestrator
                     Read-SPPublishServiceApplication
                 }
 
-                if($Script:ExtractionModeValue -ge 2)
+                if ($Script:ExtractionModeValue -ge 2)
                 {
-                    if($Quiet -or $chckRemoteTrust.Checked)
+                    if ($Quiet -or $chckRemoteTrust.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPRemoteFarmTrust
                     }
 
-                    if($Quiet -or $chckPasswordChange.Checked)
+                    if ($Quiet -or $chckPasswordChange.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPPasswordChangeSettings
                     }
 
-                    if($Quiet -or $chckSASecurity.Checked)
+                    if ($Quiet -or $chckSASecurity.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPServiceAppSecurity
@@ -712,9 +712,9 @@ function Orchestrator
             }
 
             Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
-            if($serverNumber -eq 1 -or !$nodeLoopDone)
+            if ($serverNumber -eq 1 -or !$nodeLoopDone)
             {
-                if($serverNumber -gt 1)
+                if ($serverNumber -gt 1)
                 {
                     $nodeLoopDone = $true
                 }
@@ -4372,7 +4372,7 @@ function Read-SPFarmPropertyBag()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $farm = Get-SPFarm
-    foreach($key in $farm.Properties.Keys)
+    foreach ($key in $farm.Properties.Keys)
     {
         $params.Key = $key
         $Script:dscConfigContent += "        SPFarmPropertyBag " + [System.Guid]::NewGuid().ToString() + "`r`n"
@@ -4381,16 +4381,19 @@ function Read-SPFarmPropertyBag()
 
         $results = Repair-Credentials -results $results
         $currentBlock = ""
-        if($results.Key -eq "SystemAccountName")
+        if ($results.Key -eq "SystemAccountName")
         {
             $accountName = Get-Credentials -UserName $results.Value
-            if($accountName)
+            if ($accountName)
             {
                 $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
             }
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
+            if ($accountName)
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
+            }
         }
         else
         {
@@ -5121,10 +5124,11 @@ function Get-SPReverseDSC()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
     }
 
-    if($chckAzure.Checked){
+    if ($chckAzure.Checked)
+    {
         $Azure = $true
     }
-    if(!$Azure)
+    if (!$Azure)
     {
         $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
         New-ConfigurationDataDocument -Path $outputConfigurationData
@@ -5143,12 +5147,12 @@ function Get-SPReverseDSC()
     }
 
     # Generate the Required User Script if the checkbox is selected;
-    if($chckRequiredUsers.Checked)
+    if ($chckRequiredUsers.Checked)
     {
         New-RequiredUsersScript -Location ($OutputDSCPath + "GenerateRequiredUsers.ps1")
     }
 
-    if($Script:ErrorLog)
+    if ($Script:ErrorLog)
     {
         $errorLogPath = $OutputDSCPath + "SharePointDSC.Reverse-Errors.log"
         $Script:ErrorLog | Out-File $errorLogPath
