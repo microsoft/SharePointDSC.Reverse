@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.0.0.0
+.VERSION 3.3.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,11 +16,13 @@
 
 .RELEASENOTES
 
-* Added a new Graphical User Interface;
+* Aligned with ReverseDSC 1.9.4.0;
+* Aligned with SharePointDSC 3.3.0.0;
+* Fixed issue with extraction of SPWeb level based Search Result Sources;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.2.11"},@{ModuleName="SharePointDSC";ModuleVersion="3.0.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.0"},@{ModuleName="SharePointDSC";ModuleVersion="3.3.0.0"}
 
 <#
 
@@ -52,7 +54,7 @@ $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "3.0.0.0"
+$SPDSCVersion = "3.3.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -209,14 +211,38 @@ function Orchestrator
                 }
             }
 
+            if($Quiet -or $chckFarmSolution.Checked)
+            {
+                Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                Read-SPFarmSolution
+            }
+
+
+
+            if ($serverNumber -eq 1)
+            {
+                if ($Quiet -or $chckManagedAccount.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPManagedAccounts
+                }
+
+                if ($Quiet -or $chckWebApp.Checked)
+                {
+                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
+                    Read-SPWebApplications
+                }
+            }
+
             #region SPServiceInstance
+            # Needs to be done after SPWebApplication due to timing issue with SP2019
             if($Quiet -or $chckServiceInstance.Checked)
             {
                 Write-Host "["$spServer.Name"] Scanning Service Instance(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                 if(!$Standalone -and !$nodeLoopDone)
                 {
                     Read-SPServiceInstance -Servers @($spServer.Name)
-
+            
                     $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
@@ -225,14 +251,12 @@ function Orchestrator
                     $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
 
                     $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
                     $Script:dscConfigContent += "            }`r`n"
                     $Script:dscConfigContent += "        }`r`n"
                 }
                 else
                 {
                     $servers = Get-SPServer | Where-Object{$_.Role -ne 'Invalid'}
-
                     $serverAddresses = @()
                     foreach($server in $servers)
                     {
@@ -241,7 +265,6 @@ function Orchestrator
                     if(!$serviceLoopDone)
                     {
                         Read-SPServiceInstance -Servers $serverAddresses
-                    
                         $Script:dscConfigContent += "        foreach(`$ServiceInstance in `$Node.ServiceInstances)`r`n"
                         $Script:dscConfigContent += "        {`r`n"
                         $Script:dscConfigContent += "            SPServiceInstance (`$ServiceInstance.Name.Replace(`" `", `"`") + `"Instance`")`r`n"
@@ -250,7 +273,6 @@ function Orchestrator
                         $Script:dscConfigContent += "                Ensure = `$ServiceInstance.Ensure;`r`n"
 
                         $Script:dscConfigContent += "                PsDscRunAsCredential = `$Creds" + ($Global:spFarmAccount.Username.Split('\'))[1].Replace("-","_").Replace(".", "_").Replace("@","").Replace(" ","") + "`r`n"
-
                         $Script:dscConfigContent += "            }`r`n"
                         $Script:dscConfigContent += "        }`r`n"
                     }
@@ -258,20 +280,8 @@ function Orchestrator
             }
             #endregion
 
-            if($serverNumber -eq 1)
+            if ($serverNumber -eq 1)
             {
-                if($Quiet -or $chckManagedAccount.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Managed Account(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPManagedAccounts
-                }
-
-                if($Quiet -or $chckWebApp.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Web Application(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPWebApplications
-                }
-
                 if((!$SkipSitesAndWebs -and $Quiet) -or $chckContentDB.Checked)
                 {
                     Write-Host "["$spServer.Name"] Scanning Content Database(s)..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -462,12 +472,6 @@ function Orchestrator
                 {
                     Write-Host "["$spServer.Name"] Scanning Farm Administrator(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                     Read-SPFarmAdministrators
-                }
-
-                if($Quiet -or $chckFarmSolution.Checked)
-                {
-                    Write-Host "["$spServer.Name"] Scanning Farm Solution(s)..." -BackgroundColor DarkGreen -ForegroundColor White
-                    Read-SPFarmSolution
                 }
 
                 if($Script:ExtractionModeValue -eq 3)
@@ -689,21 +693,21 @@ function Orchestrator
                     Read-SPPublishServiceApplication
                 }
 
-                if($Script:ExtractionModeValue -ge 2)
+                if ($Script:ExtractionModeValue -ge 2)
                 {
-                    if($Quiet -or $chckRemoteTrust.Checked)
+                    if ($Quiet -or $chckRemoteTrust.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Remote Farm Trust(s)..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPRemoteFarmTrust
                     }
 
-                    if($Quiet -or $chckPasswordChange.Checked)
+                    if ($Quiet -or $chckPasswordChange.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Farm Password Change Settings..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPPasswordChangeSettings
                     }
 
-                    if($Quiet -or $chckSASecurity.Checked)
+                    if ($Quiet -or $chckSASecurity.Checked)
                     {
                         Write-Host "["$spServer.Name"] Scanning Service Application(s) Security Settings..." -BackgroundColor DarkGreen -ForegroundColor White
                         Read-SPServiceAppSecurity
@@ -712,9 +716,9 @@ function Orchestrator
             }
 
             Write-Host "["$spServer.Name"] Configuring Local Configuration Manager (LCM)..." -BackgroundColor DarkGreen -ForegroundColor White
-            if($serverNumber -eq 1 -or !$nodeLoopDone)
+            if ($serverNumber -eq 1 -or !$nodeLoopDone)
             {
-                if($serverNumber -gt 1)
+                if ($serverNumber -gt 1)
                 {
                     $nodeLoopDone = $true
                 }
@@ -3725,19 +3729,19 @@ function Read-SPSearchResultSource()
                 }
 
                 <# Include Web Level Content Sources #>
-                if(!$SkipSitesAndWebs)
+                if (!$SkipSitesAndWebs)
                 {
                     $webApplications = Get-SPWebApplication
-                    foreach($webApp in $webApplications)
+                    foreach ($webApp in $webApplications)
                     {
-                        foreach($site in $webApp.Sites)
+                        foreach ($site in $webApp.Sites)
                         {
                             try
                             {
-                                foreach($web in $site.AllWebs)
+                                foreach ($web in $site.AllWebs)
                                 {
                                     # If the site is a subsite, then the SPWeb option had to be selected for extraction
-                                    if($site.RootWeb.Url -eq $web.Url -or $chckSPWeb.Checked)
+                                    if ($site.RootWeb.Url -eq $web.Url -or $chckSPWeb.Checked)
                                     {
                                         Write-Host "Scanning Results Sources for {$($web.Url)}"
                                         $fedman = New-Object Microsoft.Office.Server.Search.Administration.Query.FederationManager($ssa)
@@ -3746,11 +3750,11 @@ function Read-SPSearchResultSource()
                                         $filter.IncludeHigherLevel = $true
                                         $sources = $fedman.ListSources($filter,$true)
 
-                                        foreach($source in $sources)
+                                        foreach ($source in $sources)
                                         {
                                             try
                                             {
-                                                if(!$source.BuiltIn)
+                                                if (!$source.BuiltIn)
                                                 {
                                                     $currentContent = "        SPSearchResultSource " + [System.Guid]::NewGuid().ToString() + "`r`n"
                                                     $currentContent += "        {`r`n"
@@ -3759,20 +3763,21 @@ function Read-SPSearchResultSource()
                                                     $params.ScopeName = "SPWeb"
                                                     $params.ScopeUrl = $web.Url
                                                     $results = Get-TargetResource @params
+                                                    $results.ScopeUrl = $web.Url
 
                                                     $providers = $fedman.ListProviders()
                                                     $provider = $providers.Values | Where-Object -FilterScript {
                                                         $_.Id -eq $source.ProviderId 
                                                     }
 
-                                                    if($null -eq $results.Get_Item("ConnectionUrl"))
+                                                    if ($null -eq $results.Get_Item("ConnectionUrl"))
                                                     {
                                                         $results.Remove("ConnectionUrl")
                                                     }
                                                     $results.Query = $source.QueryTransform.QueryTemplate.Replace("`"","'")
                                                     $results.ProviderType = $provider.Name
                                                     $results.Ensure = "Present"
-                                                    if($source.ConnectionUrlTemplate)
+                                                    if ($source.ConnectionUrlTemplate)
                                                     {
                                                         $results.ConnectionUrl = $source.ConnectionUrlTemplate
                                                     }
@@ -4372,7 +4377,7 @@ function Read-SPFarmPropertyBag()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $farm = Get-SPFarm
-    foreach($key in $farm.Properties.Keys)
+    foreach ($key in $farm.Properties.Keys)
     {
         $params.Key = $key
         $Script:dscConfigContent += "        SPFarmPropertyBag " + [System.Guid]::NewGuid().ToString() + "`r`n"
@@ -4381,16 +4386,19 @@ function Read-SPFarmPropertyBag()
 
         $results = Repair-Credentials -results $results
         $currentBlock = ""
-        if($results.Key -eq "SystemAccountName")
+        if ($results.Key -eq "SystemAccountName")
         {
             $accountName = Get-Credentials -UserName $results.Value
-            if($accountName)
+            if ($accountName)
             {
                 $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
             }
 
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
+            if ($accountName)
+            {
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
+            }
         }
         else
         {
@@ -5121,10 +5129,11 @@ function Get-SPReverseDSC()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "RequiredUsers" -Value $missingUsers -Description "List of user accounts that were detected that you need to ensure exist in the destination environment;"
     }
 
-    if($chckAzure.Checked){
+    if ($chckAzure.Checked)
+    {
         $Azure = $true
     }
-    if(!$Azure)
+    if (!$Azure)
     {
         $outputConfigurationData = $OutputDSCPath + "ConfigurationData.psd1"
         New-ConfigurationDataDocument -Path $outputConfigurationData
@@ -5143,12 +5152,12 @@ function Get-SPReverseDSC()
     }
 
     # Generate the Required User Script if the checkbox is selected;
-    if($chckRequiredUsers.Checked)
+    if ($chckRequiredUsers.Checked)
     {
         New-RequiredUsersScript -Location ($OutputDSCPath + "GenerateRequiredUsers.ps1")
     }
 
-    if($Script:ErrorLog)
+    if ($Script:ErrorLog)
     {
         $errorLogPath = $OutputDSCPath + "SharePointDSC.Reverse-Errors.log"
         $Script:ErrorLog | Out-File $errorLogPath
