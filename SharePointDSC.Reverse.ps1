@@ -17,10 +17,12 @@
 .RELEASENOTES
 
 * Allows side-loading of components to extract for unattended extractions;
+* Support for ReverseDSC 1.9.4.3;
+* Fix issue with SPWebAppPolicy where permissions were incorrectly extracted as string;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.1"},@{ModuleName="SharePointDSC";ModuleVersion="3.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.3"},@{ModuleName="SharePointDSC";ModuleVersion="3.3.0.0"}
 
 <#
 
@@ -35,7 +37,7 @@ param(
     [System.String]$Mode = "Default",
     [switch]$Standalone,
     [Boolean]$Confirm = $true,
-    [String]$OutputFile = $null,    
+    [String]$OutputFile = $null,
     [String]$OutputPath = $null,
     [switch]$SkipSitesAndWebs = $false,
     [switch]$Azure = $false,
@@ -5116,7 +5118,7 @@ function Get-SPReverseDSC
     $fileName += ".ps1"
     if($OutputFile -eq "")
     {
-        if ($OutputPath -ne $null)
+        if ($OutputPath -ne "")
         {
             $OutputDSCPath = $OutputPath
         }
@@ -6226,7 +6228,10 @@ function DisplayGUI()
             $componentsToString = $componentsToString.Substring(0, $componentsToString.Length -1) + ")"
             Write-Host "To execute the same extraction process unattended, run the following command:" -BackgroundColor DarkYellow
             Write-Host ".\SharePointDSC.Reverse.ps1 -ComponentsToExtract $componentsToString"
-            Get-SPReverseDSC -ComponentsToExtract $SelectedComponents
+
+            $password = ConvertTo-SecureString $txtPassword.Text -AsPlainText -Force
+            $credentials = New-Object System.Management.Automation.PSCredential ($txtFarmAccount.Text, $password)
+            Get-SPReverseDSC -ComponentsToExtract $SelectedComponents -Credentials $credentials
         }
         else
         {
