@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.3.1.0
+.VERSION 3.3.2.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,9 +16,7 @@
 
 .RELEASENOTES
 
-* Allows side-loading of components to extract for unattended extractions;
-* Support for ReverseDSC 1.9.4.3;
-* Fix issue with SPWebAppPolicy where permissions were incorrectly extracted as string;
+* Emergency fix for 3.3.1.0 - SPWebApplications;
 
 #>
 
@@ -5782,7 +5780,7 @@ function DisplayGUI()
     $chckWebApp = New-Object System.Windows.Forms.CheckBox
     $chckWebApp.Top = 180
     $chckWebApp.AutoSize = $true;
-    $chckWebApp.Name = "SPWebAppThrottlingSettings"
+    $chckWebApp.Name = "SPWebApplication"
     $chckWebApp.Checked = $true
     $chckWebApp.Text = "Web Applications"
     $panelWebApp.Controls.Add($chckWebApp);
@@ -6226,7 +6224,7 @@ function DisplayGUI()
                 $componentsToString += "`"" + $component + "`","
             }
             $componentsToString = $componentsToString.Substring(0, $componentsToString.Length -1) + ")"
-            Write-Host "To execute the same extraction process unattended, run the following command:" -BackgroundColor DarkYellow
+            Write-Host "To execute the same extraction process unattended, run the following command:" -BackgroundColor Green -ForegroundColor White
             Write-Host ".\SharePointDSC.Reverse.ps1 -ComponentsToExtract $componentsToString"
 
             $password = ConvertTo-SecureString $txtPassword.Text -AsPlainText -Force
