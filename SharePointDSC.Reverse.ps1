@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.3.2.0
+.VERSION 3.3.3.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,7 +16,7 @@
 
 .RELEASENOTES
 
-* Emergency fix for 3.3.1.0 - SPWebApplications;
+* Various minor fixes;
 
 #>
 
@@ -3119,6 +3119,7 @@ function Read-SearchServiceApplication()
                 <# Nik20170111 - Fix a bug in 1.5.0.0 where DatabaseName and DatabaseServer is not properly returned #>
                 $results["DatabaseName"] = $searchSAInstance.SearchAdminDatabase.Name
                 $results["DatabaseServer"] = $searchSAInstance.SearchAdminDatabase.Server.Name
+                $results.WindowsServiceAccount = "`$Credsinstallaccount"
                 $results = Repair-Credentials -results $results
 
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
@@ -4502,7 +4503,7 @@ function Read-SPUserProfileSyncConnection()
                         {
                             $results.Remove("UseDisabledFilter")
                         }
-                        Save-Credentials -UserName $results.ConnectionCredentials.UserName
+                        $results.ConnectionCredentials = "`$Credsinstallaccount"
                         $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
                         $Script:dscConfigContent += "        }`r`n"
                     }
@@ -6224,7 +6225,7 @@ function DisplayGUI()
                 $componentsToString += "`"" + $component + "`","
             }
             $componentsToString = $componentsToString.Substring(0, $componentsToString.Length -1) + ")"
-            Write-Host "To execute the same extraction process unattended, run the following command:" -BackgroundColor Green -ForegroundColor White
+            Write-Host "To execute the same extraction process unattended, run the following command:" -BackgroundColor DarkGreen -ForegroundColor White
             Write-Host ".\SharePointDSC.Reverse.ps1 -ComponentsToExtract $componentsToString"
 
             $password = ConvertTo-SecureString $txtPassword.Text -AsPlainText -Force
