@@ -16,11 +16,15 @@
 
 .RELEASENOTES
 
-* Various minor fixes;
+* Updated ReverseDSC Dependency to 1.9.4.4;
+* Updated SharePointDSC Dependency to 3.4.0.0;
+* Fixed issue with Web Application App Domain Extraction;
+* Revamped $null logical operators to remove VSCode warnings;
+* Added additional Verbose and Error Handling;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.3"},@{ModuleName="SharePointDSC";ModuleVersion="3.3.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.4"},@{ModuleName="SharePointDSC";ModuleVersion="3.4.0.0"}
 
 <#
 
@@ -857,8 +861,11 @@ function Read-OperatingSystemVersion
     $Script:dscConfigContent += "<#`r`n    Operating Systems in this Farm`r`n-------------------------------------------`r`n"
     $Script:dscConfigContent += "    Products and Language Packs`r`n"
     $Script:dscConfigContent += "-------------------------------------------`r`n"
+    $i = 1
+    $total = $servers.Length
     foreach($spServer in $servers)
     {
+        Write-Host "Scanning Operating System Settings [$i/$total] for server {$($spServer.Name)}"
         $serverName = $spServer.Name
         try
         {
@@ -877,16 +884,16 @@ function Read-SQLVersion
 {
     $uniqueServers = @()
     $sqlServers = Get-SPDatabase | Select-Object Server -Unique
-    foreach($sqlServer in $sqlServers)
+    foreach ($sqlServer in $sqlServers)
     {
         $serverName = $sqlServer.Server.Address
 
-        if($serverName -eq $null)
+        if ($null -eq $serverName)
         {
             $serverName = $sqlServer.Server
         }
 
-        if(!($uniqueServers -contains $serverName))
+        if (!($uniqueServers -contains $serverName))
         {
             try
             {
@@ -1716,7 +1723,7 @@ function Read-SPManagedPaths
                 {
                     $Script:dscConfigContent += "        SPManagedPath " + [System.Guid]::NewGuid().toString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
-                    if($spManagedPath.Name -ne $null)
+                    if($null -ne $spManagedPath.Name)
                     {
                         $params.RelativeUrl = $spManagedPath.Name
                     }
@@ -1755,7 +1762,7 @@ function Read-SPManagedPaths
                 $Script:dscConfigContent += "        SPManagedPath " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
 
-                if($spManagedPath.Name -ne $null)
+                if($null -ne $spManagedPath.Name)
                 {
                     $params.RelativeUrl = $spManagedPath.Name
                 }
@@ -1949,7 +1956,7 @@ function Read-SPSiteURL($siteUrl)
     $params = Get-DSCFakeParameters -ModulePath $module
     $results = Get-TargetResource @params
 
-    if($results.Intranet -ne $null -or $results.Internet -ne $null -or $results.Custom -ne $null -or $results.Extranet -ne $null)
+    if($null -ne $results.Intranet -or $null -ne $results.Internet -or $null -ne $results.Custom -or $null -ne $results.Extranet)
     {
         $blockGUID = New-Guid
         $Script:dscConfigContent += "        SPSiteUrl " + $blockGUID.ToString() + "`r`n"
@@ -2109,7 +2116,7 @@ function Read-SPUsageServiceApplication()
 <## This function retrieves settings associated with the State Service Application, assuming it exists. #>
 function Read-StateServiceApplication ($modulePath, $params)
 {
-    if($modulePath -ne $null)
+    if($null -ne $modulePath)
     {
         $module = Resolve-Path $modulePath
     }
@@ -2119,7 +2126,7 @@ function Read-StateServiceApplication ($modulePath, $params)
         Import-Module $module
     }
 
-    if($params -eq $null)
+    if($null -eq $params)
     {
         $params = Get-DSCFakeParameters -ModulePath $module
     }
@@ -2132,7 +2139,7 @@ function Read-StateServiceApplication ($modulePath, $params)
     {
         try
         {
-            if($stateApp -ne $null)
+            if($null -ne $stateApp)
             {
                 $serviceName = $stateApp.DisplayName
                 Write-Host "Scanning State Service Application [$i/$total] {$serviceName}"
@@ -2162,7 +2169,7 @@ function Read-StateServiceApplication ($modulePath, $params)
 <## This function retrieves information about all the "Super" accounts (Super Reader & Super User) used for caching. #>
 function Read-CacheAccounts ($modulePath, $params)
 {
-    if($modulePath -ne $null)
+    if ($null -ne $modulePath)
     {
         $module = Resolve-Path $modulePath
     }
@@ -2172,7 +2179,7 @@ function Read-CacheAccounts ($modulePath, $params)
         Import-Module $module
     }
 
-    if($params -eq $null)
+    if ($null -eq $params)
     {
         $params = Get-DSCFakeParameters -ModulePath $module
     }
@@ -2204,7 +2211,7 @@ function Read-CacheAccounts ($modulePath, $params)
 <## This function retrieves settings related to the User Profile Service Application. #>
 function Read-SPUserProfileServiceApplication ($modulePath, $params)
 {
-    if($modulePath -ne $null)
+    if ($null -ne $modulePath)
     {
         $module = Resolve-Path $modulePath
     }
@@ -2214,7 +2221,7 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
         Import-Module $module
     }
 
-    if($params -eq $null)
+    if ($null -eq $params)
     {
         $params = Get-DSCFakeParameters -ModulePath $module
     }
@@ -2227,23 +2234,22 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
         $context = Get-SPServiceContext $sites[0]
         try
         {
-            $catch = new-object Microsoft.Office.Server.UserProfiles.UserProfileManager($context)
-            $catch = $null
+            new-object Microsoft.Office.Server.UserProfiles.UserProfileManager($context) | Out-Null
         }
         catch
         {
-            if($null -ne $ups)
+            if ($null -ne $ups)
             {
                 Write-Host "`r`nW103"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
                 Write-Host "   - Farm Account does not have Full Control on the User Profile Service Application."
             }
         }
 
-        if($ups -ne $null)
+        if ($null -ne $ups)
         {
             $i = 1
             $total = $ups.Length
-            foreach($upsInstance in $ups)
+            foreach ($upsInstance in $ups)
             {
                 try
                 {
@@ -2389,11 +2395,11 @@ function Read-ManagedMetadataServiceApplication()
     {
         $i = 1
         $total = $mms.Length
-        foreach($mmsInstance in $mms)
+        foreach ($mmsInstance in $mms)
         {
             try
             {
-                if($mmsInstance -ne $null)
+                if ($null -ne $mmsInstance)
                 {
                     $serviceName = $mmsInstance.Name
                     Write-Host "Scanning Managed Metadata Service [$i/$total] {$serviceName}"
@@ -2511,11 +2517,11 @@ function Read-SPWordAutomationServiceApplication()
 
     $i = 1
     $total = $was.Length
-    foreach($wa in $was)
+    foreach ($wa in $was)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $serviceName = $wa.Name
                 Write-Host "Scanning Word Automation Service Application [$i/$total] {$serviceName}"
@@ -2559,11 +2565,11 @@ function Read-SPVisioServiceApplication()
 
     $i = 1
     $total = $was.Length
-    foreach($wa in $was)
+    foreach ($wa in $was)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $serviceName = $wa.Name
                 Write-Host "Scanning Visio Service Application [$i/$total] {$serviceName}"
@@ -2654,11 +2660,11 @@ function Read-SPWorkManagementServiceApplication()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "WorkManagementServiceApplication"}
-    foreach($wa in $was)
+    foreach ($wa in $was)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.Name = $wa.Name
                 $Script:dscConfigContent += "        SPWorkManagementServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
@@ -2691,16 +2697,16 @@ function Read-SPTimerJobState
     $spTimers = Get-SPTimerJob
     $totalTimers = $spTimers.Length
     $i = 0;
-    foreach($timer in $spTimers)
+    foreach ($timer in $spTimers)
     {
         try
         {
             $i++
             Write-Host "Scanning Timer Job {"$timer.Name"}[$i/$totalTimers]..."
-            if($timer -ne $null -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
+            if ($null -ne $timer -and $timer.TypeName -ne "Microsoft.SharePoint.Administration.Health.SPHealthAnalyzerJobDefinition")
             {
                 $params.TypeName = $timer.TypeName
-                if($null -ne $timer.WebApplication)
+                if ($null -ne $timer.WebApplication)
                 {
                     $params.WebAppUrl = $timer.WebApplication.Url;
                 }
@@ -2740,18 +2746,18 @@ function Read-SPPerformancePointServiceApplication()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $was = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "BIMonitoringServiceApplication"}
-    foreach($wa in $was)
+    foreach ($wa in $was)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.Name = $wa.Name
                 $Script:dscConfigContent += "        SPPerformancePointServiceApp " + $wa.Name.Replace(" ", "") + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -2782,18 +2788,18 @@ function Read-SPWebAppWorkflowSettings()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppWorkflowSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -2817,18 +2823,18 @@ function Read-SPWebAppThrottlingSettings()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppThrottlingSettings " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -2853,18 +2859,18 @@ function Read-SPWebAppSiteUseAndDeletion()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
                 $Script:dscConfigContent += "        SPWebAppSiteUseAndDeletion " + [System.Guid]::NewGuid().toString() + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -2888,17 +2894,17 @@ function Read-SPWebApplicationExtension()
     $params = Get-DSCFakeParameters -ModulePath $module
     $zones = @("Default","Intranet","Internet","Extranet","Custom")
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
 
-                for($i = 0; $i -lt $zones.Length; $i++)
+                for ($i = 0; $i -lt $zones.Length; $i++)
                 {
-                    if($null -ne $wa.IisSettings[$zones[$i]])
+                    if ($null -ne $wa.IisSettings[$zones[$i]])
                     {
                         $params.Zone = $zones[$i]
                         $Script:dscConfigContent += "        SPWebApplicationExtension " + [System.Guid]::NewGuid().toString() + "`r`n"
@@ -2939,10 +2945,10 @@ function Read-SPWebAppPermissions()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
                 $params.Remove("ListPermissions")
@@ -2952,7 +2958,7 @@ function Read-SPWebAppPermissions()
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -2982,11 +2988,11 @@ function Read-SPWebAppProxyGroup()
     $params = Get-DSCFakeParameters -ModulePath $module
 
     $webApps = Get-SPWebApplication
-    foreach($wa in $webApps)
+    foreach ($wa in $webApps)
     {
         try
         {
-            if($wa -ne $null)
+            if ($null -ne $wa)
             {
                 $params.WebAppUrl = $wa.Url
                 $params.ServiceAppProxyGroup = $wa.ServiceApplicationProxyGroup.FriendlyName
@@ -2994,7 +3000,7 @@ function Read-SPWebAppProxyGroup()
                 $Script:dscConfigContent += "        {`r`n"
                 $results = Get-TargetResource @params
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -3014,7 +3020,7 @@ function Read-SPWebAppProxyGroup()
 <## This function retrieves settings related to the Business Connectivity Service Application. #>
 function Read-BCSServiceApplication ($modulePath, $params)
 {
-    if($modulePath -ne $null)
+    if ($null -ne $modulePath)
     {
         $module = Resolve-Path $modulePath
     }
@@ -3024,18 +3030,18 @@ function Read-BCSServiceApplication ($modulePath, $params)
         Import-Module $module
     }
 
-    if($params -eq $null)
+    if ($null -eq $params)
     {
         $params = Get-DSCFakeParameters -ModulePath $module
     }
 
     $bcsa = Get-SPServiceApplication | Where-Object{$_.GetType().Name -eq "BdcServiceApplication"}
 
-    foreach($bcsaInstance in $bcsa)
+    foreach ($bcsaInstance in $bcsa)
     {
         try
         {
-            if($bcsaInstance -ne $null)
+            if ($null -ne $bcsaInstance)
             {
                 $Script:dscConfigContent += "        SPBCSServiceApp " + $bcsaInstance.Name.Replace(" ", "") + "`r`n"
                 $Script:dscConfigContent += "        {`r`n"
@@ -3045,7 +3051,7 @@ function Read-BCSServiceApplication ($modulePath, $params)
                 <# WA - Issue with 1.6.0.0 where DB Aliases not returned in Get-TargetResource #>
                 $results["DatabaseServer"] = CheckDBForAliases -DatabaseName $results["DatabaseName"]
 
-                if($results.Contains("InstallAccount"))
+                if ($results.Contains("InstallAccount"))
                 {
                     $results.Remove("InstallAccount")
                 }
@@ -3084,11 +3090,11 @@ function Read-SearchServiceApplication()
 
     $i = 1
     $total = $searchSA.Length
-    foreach($searchSAInstance in $searchSA)
+    foreach ($searchSAInstance in $searchSA)
     {
         try
         {
-            if($searchSAInstance -ne $null)
+            if ($null -ne $searchSAInstance)
             {
                 $serviceName = $searchSAInstance.Name
                 Write-Host "Scanning Search Service Application [$i/$total] {$serviceName}"
@@ -3205,7 +3211,7 @@ function Get-SPServiceAppSecurityMembers($member)
 {
     try
     {
-        $catch = [System.Guid]::Parse($member.UserName)
+        [System.Guid]::Parse($member.UserName) | Out-Null
         $isUserGuid = $true
     }
     catch
@@ -3213,11 +3219,11 @@ function Get-SPServiceAppSecurityMembers($member)
         $isUserGuid = $false
     }
 
-    if($member.AccessLevel -ne $null -and !($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid) -and $member.AccessLevel -ne "")
+    if ($null -ne $member.AccessLevel -and !($member.AccessLevel -match "^[\d\.]+$") -and (!$isUserGuid) -and $member.AccessLevel -ne "")
     {
         $userName = Get-Credentials -UserName $member.UserName
         $value = $userName
-        if($userName)
+        if ($userName)
         {
             $value = (Resolve-Credentials -UserName $member.UserName) + ".UserName;"
         }
@@ -4330,21 +4336,44 @@ function Read-SPWebApplicationAppDomain()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $webApps = Get-SPWebApplication
+    $i = 1
+    $countWebApp = $webApps.Length
     foreach($webApp in $webApps)
     {
-        $webApplicationAppDomains = Get-SPWebApplicationAppDomain -WebApplication $webApp.Url
-        foreach($appDomain in $webApplicationAppDomains)
+        try
         {
-            $params.WebApplication = $webApp.Url
-            $Script:dscConfigContent += "        SPWebApplicationAppDomain " + [System.Guid]::NewGuid().ToString() + "`r`n"
-            $Script:dscConfigContent += "        {`r`n"
-            $results = Get-TargetResource @params
+            Write-Host "Scanning App Domains for Web Application [$i/$countWebApp] {$($webApp.Url)}"
+            $webApplicationAppDomains = Get-SPWebApplicationAppDomain -WebApplication $webApp.Url
+            $count = $webApplicationAppDomains.Length
+            $j = 1
+            foreach($appDomain in $webApplicationAppDomains)
+            {
+                try
+                {
+                    Write-Host "    -> Scanning App Domain [$j/$count] {$($appDomain.AppDomain)}"
+                    $params.WebAppUrl = $webApp.Url
+                    $Script:dscConfigContent += "        SPWebApplicationAppDomain " + [System.Guid]::NewGuid().ToString() + "`r`n"
+                    $Script:dscConfigContent += "        {`r`n"
+                    $results = Get-TargetResource @params
 
-            $results = Repair-Credentials -results $results
+                    $results = Repair-Credentials -results $results
 
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-            $Script:dscConfigContent += "        }`r`n"
+                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $Script:dscConfigContent += "        }`r`n"
+                    
+                }
+                catch
+                {
+                    $Script:ErrorLog += "[WebApplicationAppDomain] Couldn't obtain information from App Domain {$($appDomain.AppDomain)} for Web Application {$($webApp.Url)}`r`n"
+                }
+                $j++
+            }
         }
+        catch
+        {
+            $Script:ErrorLog += "[SPWebApplicationAppDomain] Couldn't properly retrieve all App Domain from Web Application {$($webApp.Url)}`r`n"
+        }
+        $i++
     }
 }
 
@@ -4354,26 +4383,37 @@ function Read-SPWebAppGeneralSettings()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $webApps = Get-SPWebApplication
+    $i = 1
+    $total = $webApps.Length
     foreach($webApp in $webApps)
     {
-        $params.WebAppUrl = $webApp.Url
-        $Script:dscConfigContent += "        SPWebAppGeneralSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-
-        $results = Get-TargetResource @params
-
-        if($results.DefaultQuotaTemplate -eq "No Quota" -or $results.DefaultQuotaTemplate -eq "")
+        try
         {
-            $results.Remove("DefaultQuotaTemplate")
-        }
+            Write-Host "Scanning Web App General Settings [$i/$total] {$($webApp.Url)}"
+            $params.WebAppUrl = $webApp.Url
+            $Script:dscConfigContent += "        SPWebAppGeneralSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
 
-        $results = Repair-Credentials -results $results
-        if($results.TimeZone -eq -1 -or $null -eq $results.TimeZone)
-        {
-            $results.Remove("TimeZone")
+            $results = Get-TargetResource @params
+
+            if($results.DefaultQuotaTemplate -eq "No Quota" -or $results.DefaultQuotaTemplate -eq "")
+            {
+                $results.Remove("DefaultQuotaTemplate")
+            }
+
+            $results = Repair-Credentials -results $results
+            if($results.TimeZone -eq -1 -or $null -eq $results.TimeZone)
+            {
+                $results.Remove("TimeZone")
+            }
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
         }
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
+        catch
+        {
+            $Script:ErrorLog += "[SPWebApplicationGeneralSettings] Couldn't properly retrieve all General Settings from Web Application {$($webApp.Url)}`r`n"
+        }
+        $i++
     }
 }
 
@@ -4383,16 +4423,27 @@ function Read-SPWebAppBlockedFileTypes()
     Import-Module $module
     $params = Get-DSCFakeParameters -ModulePath $module
     $webApps = Get-SPWebApplication
+    $i = 1
+    $total = $webApps.Length
     foreach($webApp in $webApps)
     {
-        $params.WebAppUrl = $webApp.Url
-        $Script:dscConfigContent += "        SPWebAppBlockedFileTypes " + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $results = Get-TargetResource @params
+        try
+        {
+            Write-Host "Scanning Web App Blocked File Types [$i/$total] {$($webApp.Url)}"
+            $params.WebAppUrl = $webApp.Url
+            $Script:dscConfigContent += "        SPWebAppBlockedFileTypes " + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $results = Get-TargetResource @params
 
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[SPWebAppBlockedFileTypes] Couldn't properly retrieve all Blocked File Types from Web Application {$($webApp.Url)}`r`n"
+        }
+        $i++
     }
 }
 
@@ -4754,15 +4805,26 @@ function Read-SPAppStoreSettings()
     $params = Get-DSCFakeParameters -ModulePath $module
     $webApps = Get-SPWebApplication
 
+    $i = 1
+    $total = $webApps.Length
     foreach($webApp in $webApps)
     {
-        $Script:dscConfigContent += "        SPAppStoreSettings " + $webApp.Name.Replace(" ", "") + [System.Guid]::NewGuid().ToString() + "`r`n"
-        $Script:dscConfigContent += "        {`r`n"
-        $params.WebAppUrl = $webApp.Url
-        $results = Get-TargetResource @params
-        $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
-        $Script:dscConfigContent += "        }`r`n"
+        try
+        {
+            Write-Host "Scanning App Store Settings [$i/$total] for Web Application {$($webApp.Url)}"
+            $Script:dscConfigContent += "        SPAppStoreSettings " + $webApp.Name.Replace(" ", "") + [System.Guid]::NewGuid().ToString() + "`r`n"
+            $Script:dscConfigContent += "        {`r`n"
+            $params.WebAppUrl = $webApp.Url
+            $results = Get-TargetResource @params
+            $results = Repair-Credentials -results $results
+            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $Script:dscConfigContent += "        }`r`n"
+        }
+        catch
+        {
+            $Script:ErrorLog += "[SPAppStoreSettings] Couldn't obtain information from App Store Settings for Web Application {$($webApp.Url)}`r`n"
+        }
+        $i++
     }
 }
 
@@ -4786,7 +4848,7 @@ function Read-SPDistributedCacheService()
     $params = Get-DSCFakeParameters -ModulePath $module
     $params.Name = "DistributedCache"
     $results = Get-TargetResource @params
-    if($results.Get_Item("Ensure").ToLower() -eq "present" -and $results.Contains("CacheSizeInMB"))
+    if ($results.Get_Item("Ensure").ToLower() -eq "present" -and $results.Contains("CacheSizeInMB"))
     {
         $Script:dscConfigContent += "        SPDistributedCacheService " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
@@ -4795,7 +4857,7 @@ function Read-SPDistributedCacheService()
 
         $serviceAccount = Get-Credentials -UserName $results.ServiceAccount
         $convertToVariable = $false
-        if($serviceAccount)
+        if ($serviceAccount)
         {
             $convertToVariable = $true
             $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
@@ -5279,11 +5341,11 @@ function SelectComponentsForMode($mode){
     $components = $null
     if($mode -eq 1)
     {
-        $components = $liteComponents
+        $components = $Global:liteComponents
     }
     elseif($mode -eq 2)
     {
-        $components = $defaultComponents
+        $components = $Global:defaultComponents
     }
     foreach($panel in $panelMain.Controls)
     {
@@ -6079,8 +6141,8 @@ function DisplayGUI()
     #endregion
 
     #region Extraction Modes
-    $liteComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckSearchIndexPart, $chckWAAppDomain, $chckSessionState, $chckSAUsage)
-    $defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
+    $Global:liteComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckSearchIndexPart, $chckWAAppDomain, $chckSessionState, $chckSAUsage)
+    $Global:defaultComponents = @($chckSAAccess, $chckSAAccess2010, $chckAlternateURL, $chckAntivirus, $chckAppCatalog, $chckAppDomain, $chckSAAppMan, $chckAppStore, $chckSABCS, $chckBlobCache, $chckCacheAccounts, $chckContentDB, $chckDiagLogging, $chckDistributedCache, $chckSAExcel, $chckFarmConfig, $chckFarmAdmin, $chckFarmPropBag, $chckFarmSolution, $chckIRM, $chckSAMachine, $chckManagedAccount, $chckSAMMS, $chckManagedPaths, $chckOutgoingEmail, $chckSAPerformance, $chckSAPublish, $chckQuotaTemplates, $chckSearchContentSource, $chckSearchIndexPart, $chckSearchSA, $chckSearchTopo, $chckSASecureStore, $chckServiceAppPool, $chckWAProxyGroup, $chckServiceInstance, $chckSAState, $chckSiteCollection, $chckSessionState, $chckSASub, $chckUPSA, $chckSAVisio, $chckWebApp, $chckWebAppPerm, $chckWebAppPolicy, $chckSAWord, $chckSAWork, $chckOOS, $chckPasswordChange, $chckRemoteTrust, $chckSearchCrawlerImpact, $chckSearchCrawlRule, $chckSearchResultSources, $chckSASecurity, $chckTrustedIdentity, $chckUPSPermissions, $chckUPSSync, $chckWABlockedFiles, $chckWAGeneral, $chckWAProxyGroup, $chckWADeletion, $chckWAThrottling, $chckWAWorkflow, $chckSearchIndexPart, $chckWAAppDomain, $chckWAExtension, $chckSessionState, $chckSAUsage)
     #endregion
 
     #region Top Menu
