@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.6.0.0
+.VERSION 3.7.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -18,11 +18,11 @@
 
 * Fixed issue with Central admin Port retrieval;
 * Updated dependency to ReverseDSC 1.9.4.6;
-* Updated dependency to SharePointDSC 3.6.0.0;
+* Updated dependency to SharePointDSC 3.7.0.0;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.6"},@{ModuleName="SharePointDSC";ModuleVersion="3.6.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.6"},@{ModuleName="SharePointDSC";ModuleVersion="3.7.0.0"}
 
 <#
 
