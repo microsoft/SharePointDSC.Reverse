@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.3.3.0
+.VERSION 3.6.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,15 +16,13 @@
 
 .RELEASENOTES
 
-* Updated ReverseDSC Dependency to 1.9.4.4;
-* Updated SharePointDSC Dependency to 3.4.0.0;
-* Fixed issue with Web Application App Domain Extraction;
-* Revamped $null logical operators to remove VSCode warnings;
-* Added additional Verbose and Error Handling;
+* Fixed issue with Central admin Port retrieval;
+* Updated dependency to ReverseDSC 1.9.4.6;
+* Updated dependency to SharePointDSC 3.6.0.0;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.4"},@{ModuleName="SharePointDSC";ModuleVersion="3.4.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.6"},@{ModuleName="SharePointDSC";ModuleVersion="3.6.0.0"}
 
 <#
 
@@ -1008,6 +1006,8 @@ function Read-SPFarm (){
 
     $Script:dscConfigContent += "        SPFarm " + [System.Guid]::NewGuid().ToString() + "`r`n        {`r`n"
     $params = Get-DSCFakeParameters -ModulePath $module
+    $params.CentralAdministrationPort = 443
+
     <# If not SP2016, remove the server role param. #>
     if ($spMajorVersion -ne 16)
     {
