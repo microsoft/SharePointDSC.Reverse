@@ -42,7 +42,11 @@ param(
     [switch]$SkipSitesAndWebs = $false,
     [switch]$Azure = $false,
     [System.Management.Automation.PSCredential]$Credentials,
-    [System.Object[]]$ComponentsToExtract)
+    [System.Object[]]$ComponentsToExtract,
+    [switch]$DynamicCompilation,
+    [String]$ProductKey,
+    [String]$BinaryLocation
+)
 
 <## Script Settings #>
 $VerbosePreference = "SilentlyContinue"
@@ -101,7 +105,23 @@ function Orchestrator
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $Credentials
+        $Credentials,
+
+        [Parameter()]
+        [Switch]
+        $Standalone,
+
+        [Parameter()]
+        [Switch]
+        $DynamicCompilation,
+
+        [Parameter()]
+        [System.String]
+        $ProductKey,
+
+        [Parameter()]
+        [System.String]
+        $BinaryLocation
     )
 
     Test-Prerequisites
@@ -111,7 +131,16 @@ function Orchestrator
     {
         if ($null -eq $Credentials)
         {
-            $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+            if ($DynamicCompilation)
+            {
+                $password = "fakepassword" | ConvertTo-SecureString -asPlainText -Force
+                $userName = $env:USERDOMAIN + "\" + $env:UserName
+                $Global:spFarmAccount = New-Object System.Management.Automation.PSCredential($userName, $password)
+            }
+            else
+            {
+                $Global:spFarmAccount = Get-Credential -Message "Credentials with Farm Admin Rights" -UserName $env:USERDOMAIN\$env:USERNAME
+            }
         }
         else
         {
@@ -132,7 +161,7 @@ function Orchestrator
     $spFarm = Get-SPFarm
     $spServers = $spFarm.Servers | Where-Object{$_.Role -ne 'Invalid'}
 
-    if($chckStandAlone.Checked)
+    if($chckStandAlone.Checked -or $StandAlone -or $DynamicCompilation)
     {
         $Standalone = $true
     }
@@ -143,14 +172,21 @@ function Orchestrator
 
     if($Standalone)
     {
-        $i = 0;
-        foreach($spServer in $spServers)
+        if ($DynamicCompilation)
         {
-            if($i -eq 0)
+            $spServers = @("localhost")
+        }
+        else
+        {
+            $i = 0;
+            foreach($spServer in $spServers)
             {
-                $spServers = @($spServer)
+                if($i -eq 0)
+                {
+                    $spServers = @($spServer)
+                }
+                $i++
             }
-            $i++
         }
     }
     $Script:dscConfigContent += "<# Generated with ReverseDSC " + $script:version + " #>`r`n"
@@ -179,6 +215,11 @@ function Orchestrator
     }
     $Script:dscConfigContent += "Configuration $Script:configName`r`n"
     $Script:dscConfigContent += "{`r`n"
+    $Script:dscConfigContent += "    param(`r`n"
+    $Script:dscConfigContent += "        [parameter()]`r`n"
+    $Script:dscConfigContent += "        [System.String]`r`n"
+    $Script:dscConfigContent += "        `$ServerName`r`n"
+    $Script:dscConfigContent += "    )`r`n"
     $Script:dscConfigContent += "    <# Credentials #>`r`n"
 
     Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -193,16 +234,20 @@ function Orchestrator
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
-            if($Standalone)
+            if($Standalone -and -not $DynamicCompilation)
             {
                 $Script:currentServerName = $env:COMPUTERNAME
                 Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
             }
-            else {
+            elseif (-not $DynamicCompilation) {
                 Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description "Identifier for the Current Server"
             }
 
-            if($serverNumber -eq 1)
+            if ($DynamicCompilation)
+            {
+                $Script:dscConfigContent += "`r`n    Node `$ServerName`r`n    {`r`n"
+            }
+            elseif($serverNumber -eq 1)
             {
                 $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
             }
@@ -213,9 +258,14 @@ function Orchestrator
             <# Extract the ServerRole property for SP2016 servers; #>
             $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
             $currentServer = Get-SPServer $Script:currentServerName
-            if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
+            if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole") -and
+            -not $DynamicCompilation)
             {
-                if($StandAlone)
+                if ($DynamicCompilation)
+                {
+                    Add-ConfigurationDataEntry -Node 'localhost' -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
+                }
+                elseif($StandAlone)
                 {
                     Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
                 }
@@ -227,10 +277,16 @@ function Orchestrator
             if($serverNumber -eq 1 -or !$nodeLoopDone)
             {
                 Write-Host "["$spServer.Name"] Generating the SharePoint Prerequisites Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPInstallPrereqs
+                
+                $prereqLocation = $BinaryLocation
+                if (-not [System.String]::IsNullOrEmpty($prereqLocation))
+                {
+                    $prereqLocation = Join-Path -Path $prereqLocation -ChildPath 'prerequisiteinstaller.exe'
+                }
+                Read-SPInstallPrereqs -BinaryLocation $prereqLocation
 
                 Write-Host "["$spServer.Name"] Generating the SharePoint Binary Installation..." -BackgroundColor DarkGreen -ForegroundColor White
-                Read-SPInstall
+                Read-SPInstall -ProductKey $ProductKey -BinaryLocation $BinaryLocation
 
                 if($Quiet -or $ComponentsToExtract.Contains("SPFarm"))
                 {
@@ -962,13 +1018,22 @@ function Read-SPProductVersions
 }
 function Read-SPInstall
 {
+    param(
+        [Parameter()]
+        [System.String]
+        $ProductKey = "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX",
+
+        [Parameter()]
+        [System.String]
+        $BinaryLocation = "\\<location>"
+    )
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$False" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPInstallationBinaryPath" -Value "\\<location>" -Description "Location of the SharePoint Binaries (local path or network share);"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPInstallationBinaryPath" -Value $BinaryLocation -Description "Location of the SharePoint Binaries (local path or network share);"
     $Script:dscConfigContent += "                BinaryDir = `$ConfigurationData.NonNodeData.SPInstallationBinaryPath;`r`n"
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value "XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" -Description "SharePoint Product Key"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value $ProductKey -Description "SharePoint Product Key"
     $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
     $Script:dscConfigContent += "                IsSingleInstance = `"Yes`";`r`n"
@@ -979,11 +1044,23 @@ function Read-SPInstall
 
 function Read-SPInstallPrereqs
 {
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$False" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    param(
+        [Parameter()]
+        [System.String]
+        $BinaryLocation = "\\<location>" 
+    )
+    if ($DynamicCompilation)
+    {
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$True" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    }
+    else
+    {
+        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "FullInstallation" -Value "`$False" -Description "Specifies whether or not the DSC configuration script will install the SharePoint Prerequisites and Binaries;"
+    }
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
-    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value "\\<location>" -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
+    Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value $BinaryLocation -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
     $Script:dscConfigContent += "                InstallerPath = `$ConfigurationData.NonNodeData.SPPrereqsInstallerPath;`r`n"
     $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
@@ -1041,7 +1118,14 @@ function Read-SPFarm (){
 
     if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
     {
-        Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+        if ($DynamicCompilation)
+        {
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value 'localhost' -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+        }
+        else
+        {
+            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $configDB.NormalizedDataSource -Description "Name of the Database Server associated with the destination SharePoint Farm;"
+        }
     }
 
     if($null -eq (Get-ConfigurationDataEntry -Key "PassPhrase"))
@@ -1917,7 +2001,11 @@ function Read-SPServiceInstance($Servers)
             }
         }
 
-        if($StandAlone)
+        if ($DynamicCompilation)
+        {
+            Add-ConfigurationDataEntry -Node 'localhost' -Key "ServiceInstances" -Value $serviceStatuses
+        }
+        elseif($StandAlone)
         {
             Add-ConfigurationDataEntry -Node $env:ComputerName -Key "ServiceInstances" -Value $serviceStatuses
         }
@@ -5152,11 +5240,41 @@ function Get-SPReverseDSC
 
         [Parameter()]
         [System.String]
-        $OutputPath
+        $OutputPath,
+
+        [Parameter()]
+        [Switch]
+        $Standalone,
+
+        [Parameter()]
+        [Switch]
+        $DynamicCompilation,
+
+        [Parameter()]
+        [System.String]
+        $ProductKey,
+
+        [Parameter()]
+        [System.String]
+        $BinaryLocation
     )
 
-    <## Call into our main function that is responsible for extracting all the information about our SharePoint farm. #>
-    Orchestrator -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials
+    if ($StandAlone)
+    {
+        if ($DynamicCompilation)
+        {
+            Orchestrator -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -StandAlone -DynamicCompilation -BinaryLocation $BinaryLocation -ProductKey $ProductKey
+        }
+        else
+        {
+            Orchestrator -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -StandAlone -BinaryLocation $BinaryLocation -ProductKey $ProductKey
+        }
+    }
+    else
+    {
+        <## Call into our main function that is responsible for extracting all the information about our SharePoint farm. #>
+        Orchestrator -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -BinaryLocation $BinaryLocation -ProductKey $ProductKey
+    }
 
     <## Prompts the user to specify the FOLDER path where the resulting PowerShell DSC Configuration Script will be saved. #>
     $fileName = "SPFarmConfig"
@@ -6318,7 +6436,21 @@ if($null -ne $sharePointSnapin)
 {
     if($Quiet -or $ComponentsToExtract.Count -gt 0)
     {
-        Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath
+        if ($StandAlone)
+        {
+            if ($DynamicCompilation)
+            {
+                Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -DynamicCompilation -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+            }
+            else
+            {
+                Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+            }
+        }
+        else
+        {
+            Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+        }
     }
     else
     {
