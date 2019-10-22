@@ -218,7 +218,10 @@ function Orchestrator
     $Script:dscConfigContent += "    param(`r`n"
     $Script:dscConfigContent += "        [parameter()]`r`n"
     $Script:dscConfigContent += "        [System.String]`r`n"
-    $Script:dscConfigContent += "        `$ServerName`r`n"
+    $Script:dscConfigContent += "        `$ServerName,`r`n`r`n"
+    $Script:dscConfigContent += "        [parameter()]`r`n"
+    $Script:dscConfigContent += "        [System.String]`r`n"
+    $Script:dscConfigContent += "        `$ConfigurationDataPath`r`n"
     $Script:dscConfigContent += "    )`r`n"
     $Script:dscConfigContent += "    <# Credentials #>`r`n"
 
@@ -823,6 +826,10 @@ function Orchestrator
     if(!$Azure -and -not $DynamicCompilation)
     {
         $Script:dscConfigContent += "$configName -ConfigurationData .\ConfigurationData.psd1"
+    }
+    elseif ($DynamicCompilation)
+    {
+        $Script:dscConfigContent += "$configName -ConfigurationData `$ConfigurationDataPath"
     }
 }
 
