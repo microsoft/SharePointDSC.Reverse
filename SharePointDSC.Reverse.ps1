@@ -213,16 +213,13 @@ function Orchestrator
     {
         $Script:configName += "-Lite"
     }
+    $Script:dscConfigContent += "param(`r`n"
+    $Script:dscConfigContent += "    [parameter()]`r`n"
+    $Script:dscConfigContent += "    [System.String]`r`n"
+    $Script:dscConfigContent += "    `$ConfigurationDataPath`r`n"
+    $Script:dscConfigContent += ")`r`n"
     $Script:dscConfigContent += "Configuration $Script:configName`r`n"
     $Script:dscConfigContent += "{`r`n"
-    $Script:dscConfigContent += "    param(`r`n"
-    $Script:dscConfigContent += "        [parameter()]`r`n"
-    $Script:dscConfigContent += "        [System.String]`r`n"
-    $Script:dscConfigContent += "        `$ServerName,`r`n`r`n"
-    $Script:dscConfigContent += "        [parameter()]`r`n"
-    $Script:dscConfigContent += "        [System.String]`r`n"
-    $Script:dscConfigContent += "        `$ConfigurationDataPath`r`n"
-    $Script:dscConfigContent += "    )`r`n"
     $Script:dscConfigContent += "    <# Credentials #>`r`n"
 
     Write-Host "Configuring Dependencies..." -BackgroundColor DarkGreen -ForegroundColor White
@@ -237,7 +234,11 @@ function Orchestrator
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
-            if($Standalone)
+            if ($StandAlone -and $DynamicCompilation)
+            {
+                Add-ConfigurationDataEntry -Node "localhost" -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
+            }
+            elseif($Standalone)
             {
                 $Script:currentServerName = $env:COMPUTERNAME
                 Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
@@ -257,8 +258,7 @@ function Orchestrator
             <# Extract the ServerRole property for SP2016 servers; #>
             $spMajorVersion = (Get-SPDSCInstalledProductVersion).FileMajorPart
             $currentServer = Get-SPServer $Script:currentServerName
-            if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole") -and
-            -not $DynamicCompilation)
+            if($spMajorVersion -ge 16 -and $null -eq (Get-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole"))
             {
                 if ($DynamicCompilation)
                 {
