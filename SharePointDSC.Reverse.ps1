@@ -246,11 +246,7 @@ function Orchestrator
                 Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value $serverNumber -Description "Identifier for the Current Server"
             }
 
-            if ($DynamicCompilation)
-            {
-                $Script:dscConfigContent += "`r`n    Node `$ServerName`r`n    {`r`n"
-            }
-            elseif($serverNumber -eq 1)
+            if($serverNumber -eq 1)
             {
                 $Script:dscConfigContent += "`r`n    Node `$AllNodes.Where{`$_.ServerNumber -eq '1'}.NodeName`r`n    {`r`n"
             }
