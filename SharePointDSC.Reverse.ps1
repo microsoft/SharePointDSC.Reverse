@@ -237,7 +237,7 @@ function Orchestrator
         <## SQL servers are returned by Get-SPServer but they have a Role of 'Invalid'. Therefore we need to ignore these. The resulting PowerShell DSC Configuration script does not take into account the configuration of the SQL server for the SharePoint Farm at this point in time. We are activaly working on giving our users an experience that is as painless as possible, and are planning on integrating the SQL DSC Configuration as part of our feature set. #>
         if($spServer.Role -ne "Invalid")
         {
-            if($Standalone -and -not $DynamicCompilation)
+            if($Standalone)
             {
                 $Script:currentServerName = $env:COMPUTERNAME
                 Add-ConfigurationDataEntry -Node $env:COMPUTERNAME -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
