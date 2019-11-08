@@ -63,3 +63,8 @@ ReverseDSC can be used for many reasons, including:
 
 # How to Contribute?
 Please refer to the follow Wiki page if you are interested in contributing to the project: https://github.com/Microsoft/SharePointDSC.Reverse/wiki/Contribute-to-an-Orchestrator-Script
+
+## Versions
+
+### Unreleased
+- Fixed issue Incorrect handling of Port in Read-SPWebapplications #90

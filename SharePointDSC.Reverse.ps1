@@ -1263,11 +1263,7 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            if($results.WebAppURl.Contains(":") -and $results.Port -and $results.Port -ne 80)
-            {
-                $results.Remove("Port")
-            }
-            elseif(!$results.WebAppUrl.Contains(":") -and !$results.Port)
+            if(!$results.WebAppUrl.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
