@@ -68,3 +68,4 @@ Please refer to the follow Wiki page if you are interested in contributing to th
 
 ### Unreleased
 - Fixed issue Incorrect handling of Port in Read-SPWebapplications #90
+- Fails to handle Farms with multiple SQL Server instances #92
