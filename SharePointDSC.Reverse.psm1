@@ -20,7 +20,8 @@
 * Updated dependency to ReverseDSC 1.9.4.7;
 * Updated dependency to SharePointDSC 3.6.0.0;
 * Fixed issue #90 incorrect handling of Port in Read-SPWebapplications; 
-* Fixed issue #92  | Fails to handle Farms with multiple SQL Server instances; 
+* Fixed issue #92  | Fails to handle Farms with multiple SQL Server instances;
+
 
 #>
 
@@ -32,68 +33,110 @@
  Extracts the DSC Configuration of an existing SharePoint 2013, 2016 or 2019 environment, allowing you to analyze it or to replicate the farm.
 
 #>
+function Start-SPReverseDSC{
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [System.Management.Automation.PSCredential]$Credentials,    
+        [switch]$Quiet = $false,
+        [ValidateSet("Lite","Default", "Full", "Granular")]
+        [System.String]$Mode = "Granular",
+        [switch]$Standalone,
+        [Boolean]$Confirm = $true,
+        [String]$OutputFile = $null,
+        [String]$OutputPath = $null,
+        [switch]$SkipSitesAndWebs = $false,
+        [switch]$Azure = $false,
+        [System.Object[]]$ComponentsToExtract,
+        [switch]$DynamicCompilation,
+        [String]$ProductKey,
+        [String]$BinaryLocation, 
+        [switch]$GUI, 
+        [string]$CAServer
+    )
 
-param(    
-    [switch]$Quiet = $false,
-    [ValidateSet("Lite","Default", "Full")]
-    [System.String]$Mode = "Default",
-    [switch]$Standalone,
-    [Boolean]$Confirm = $true,
-    [String]$OutputFile = $null,
-    [String]$OutputPath = $null,
-    [switch]$SkipSitesAndWebs = $false,
-    [switch]$Azure = $false,
-    [System.Management.Automation.PSCredential]$Credentials,
-    [System.Object[]]$ComponentsToExtract,
-    [switch]$DynamicCompilation,
-    [String]$ProductKey,
-    [String]$BinaryLocation
-)
+    <## Script Settings #>
+    $VerbosePreference = "SilentlyContinue"
 
-<## Script Settings #>
-$VerbosePreference = "SilentlyContinue"
+    <## Dependency Hashes ##>
+    $Script:DH_SPQUOTATEMPLATE = @{}
 
-<## Dependency Hashes ##>
-$Script:DH_SPQUOTATEMPLATE = @{}
+    <## Scripts Variables #>
+    $Script:dscConfigContent = ""
+    $Global:AllUsers = @()
+    
+    $Script:ErrorLog = ""
+    $Script:configName = ""
+    $Script:currentServerName = ""
+    $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
+    $SPDSCVersion = "3.6.0.0"
+    $Script:spCentralAdmin = ""
+    $Script:ExtractionModeValue = "2"
+    $script:SkipSitesAndWebs = $SkipSitesAndWebs
 
-<## Scripts Variables #>
-$Script:dscConfigContent = ""
-$Global:AllUsers = @()
-$Script:ErrorLog = ""
-$Script:configName = ""
-$Script:currentServerName = ""
-$SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "3.6.0.0"
-$Script:spCentralAdmin = ""
-$Script:ExtractionModeValue = "2"
-$script:SkipSitesAndWebs = $SkipSitesAndWebs
+    if ($Quiet)
+    {
+        Write-Warning "-Quiet is deprecated. For unattended extraction, please use the -ComponentsToExtract parameter."
+    }
 
-if ($Quiet)
-{
-    Write-Warning "-Quiet is deprecated. For unattended extraction, please use the -ComponentsToExtract parameter."
+    if($Mode.ToLower() -eq "lite")
+    {
+        $Script:ExtractionModeValue = 1
+    }
+    elseif($Mode.ToLower() -eq "full")
+    {
+        $Script:ExtractionModeValue = 3
+    }
+
+    try
+    {
+        $currentScript = Test-ScriptFileInfo $SCRIPT:MyInvocation.MyCommand.Path
+        $Script:version = $currentScript.Version.ToString()
+    }
+    catch
+    {
+        $Script:version = $SPDSCVersion
+    }
+    $Script:SPDSCPath = $SPDSCSource + $SPDSCVersion
+    $Global:spFarmAccount = ""
+
+    Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
+    $sharePointSnapin = Get-PSSnapin | Where-Object{$_.Name -eq "Microsoft.SharePoint.PowerShell"}
+    if($null -ne $sharePointSnapin)
+    {
+        if($Quiet -or $ComponentsToExtract.Count -gt 0)
+        {
+            if ($StandAlone)
+            {
+                if ($DynamicCompilation)
+                {
+                    Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -DynamicCompilation -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+                }
+                else
+                {
+                    Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+                }
+            }
+            else
+            {
+                Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -ProductKey $ProductKey -BinaryLocation $BinaryLocation
+            }
+        }
+        elseif($GUI)
+        {
+            DisplaySPDSCReverseGUI
+        }
+    }
+    else
+    {
+        Write-Host "`r`nE102"  -BackgroundColor Red -ForegroundColor Black -NoNewline
+        Write-Host "    - We couldn't detect a SharePoint installation on this machine. Please execute the SharePoint ReverseDSC script on an existing SharePoint server."
+    }
+
+
+
 }
-
-if($Mode.ToLower() -eq "lite")
-{
-    $Script:ExtractionModeValue = 1
-}
-elseif($Mode.ToLower() -eq "full")
-{
-    $Script:ExtractionModeValue = 3
-}
-
-try
-{
-    $currentScript = Test-ScriptFileInfo $SCRIPT:MyInvocation.MyCommand.Path
-    $Script:version = $currentScript.Version.ToString()
-}
-catch
-{
-    $Script:version = $SPDSCVersion
-}
-$Script:SPDSCPath = $SPDSCSource + $SPDSCVersion
-$Global:spFarmAccount = ""
-
+Export-ModuleMember -Function Start-SPReverseDSC 
 
 <## This is the main function for this script. It acts as a call dispatcher, calling the various functions required in the proper order to get the full farm picture. #>
 function Orchestrator
@@ -214,6 +257,10 @@ function Orchestrator
     elseif($Script:ExtractionModeValue -eq 1)
     {
         $Script:configName += "-Lite"
+    }
+    elseif($Script:ExtractionModeValue -eq 0)
+    {
+        $Script:configName += "-Granular"
     }
     $Script:dscConfigContent += "param(`r`n"
     $Script:dscConfigContent += "    [parameter()]`r`n"
@@ -1110,7 +1157,8 @@ function Read-SPFarm (){
     }
     $params.CentralAdministrationAuth = $caAuthMethod
     $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].ServerBindings.Port
-    if($null -eq $params.CentralAdministrationPort -or $parms.CentralAdministrationPort -eq 0){
+    if($null -eq $params.CentralAdministrationPort -or $params.CentralAdministrationPort -eq 0)
+    {
         $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].SecureBindings.Port
     }
     $params.FarmAccount = $Global:spFarmAccount
@@ -3440,7 +3488,9 @@ function Read-SPContentDatabase()
             $params.WebAppUrl = $spContentDB.WebApplication.Url
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
+
             $results.DatabaseServer = $spContentDB.Server
+
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
             $Script:dscConfigContent += $currentBlock
@@ -5237,7 +5287,7 @@ function Get-SPReverseDSC
 
         [Parameter()]
         [System.Management.Automation.PSCredential]
-        $Credentials,
+        $Credentials = $script:Credentials,
 
         [Parameter()]
         [System.String]
@@ -5396,7 +5446,6 @@ function Get-SPReverseDSC
     Start-Sleep 1
     Invoke-Item -Path $OutputDSCPath
 }
-
 function New-RequiredUsersScript($Location)
 {
     $content = "Import-Module ActiveDirectory`r`n"
@@ -5494,8 +5543,11 @@ function SelectComponentsForMode($mode){
     }
 }
 #endregion
-function DisplayGUI()
+function DisplaySPDSCReverseGUI()
 {
+    [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
+    [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null
+
     #region Global
     $firstColumnLeft = 10
     $secondColumnLeft = 280
@@ -6431,37 +6483,4 @@ function DisplayGUI()
 }
 #endregion
 
-Add-PSSnapin Microsoft.SharePoint.PowerShell -EA SilentlyContinue
-$sharePointSnapin = Get-PSSnapin | Where-Object{$_.Name -eq "Microsoft.SharePoint.PowerShell"}
-if($null -ne $sharePointSnapin)
-{
-    if($Quiet -or $ComponentsToExtract.Count -gt 0)
-    {
-        if ($StandAlone)
-        {
-            if ($DynamicCompilation)
-            {
-                Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -DynamicCompilation -ProductKey $ProductKey -BinaryLocation $BinaryLocation
-            }
-            else
-            {
-                Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -StandAlone -ProductKey $ProductKey -BinaryLocation $BinaryLocation
-            }
-        }
-        else
-        {
-            Get-SPReverseDSC -ComponentsToExtract $ComponentsToExtract -Credentials $Credentials -OutputPath $OutputPath -ProductKey $ProductKey -BinaryLocation $BinaryLocation
-        }
-    }
-    else
-    {
-        [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null
-        [System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | Out-Null
-        DisplayGUI
-    }
-}
-else
-{
-    Write-Host "`r`nE102"  -BackgroundColor Red -ForegroundColor Black -NoNewline
-    Write-Host "    - We couldn't detect a SharePoint installation on this machine. Please execute the SharePoint ReverseDSC script on an existing SharePoint server."
-}
+Export-ModuleMember -Variable Global* 
