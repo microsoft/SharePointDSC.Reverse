@@ -1156,7 +1156,11 @@ function Read-SPFarm (){
         $caAuthMethod = "Kerberos"
     }
     $params.CentralAdministrationAuth = $caAuthMethod
-    $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].SecureBindings.Port
+    $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].ServerBindings.Port
+    if($null -eq $params.CentralAdministrationPort -or $params.CentralAdministrationPort -eq 0)
+    {
+        $params.CentralAdministrationPort = $Script:spCentralAdmin.IisSettings[0].SecureBindings.Port
+    }
     $params.FarmAccount = $Global:spFarmAccount
     $params.Passphrase = $Global:spFarmAccount
     $results = Get-TargetResource @params

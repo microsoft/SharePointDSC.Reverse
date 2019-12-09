@@ -19,6 +19,8 @@
 * Fixed issue with Central admin Port retrieval;
 * Updated dependency to ReverseDSC 1.9.4.7;
 * Updated dependency to SharePointDSC 3.6.0.0;
+* Fixed issue #90 incorrect handling of Port in Read-SPWebapplications; 
+* Fixed issue #92  | Fails to handle Farms with multiple SQL Server instances; 
 
 #>
 
@@ -1266,11 +1268,7 @@ function Read-SPWebApplications (){
 
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-            if($results.WebAppURl.Contains(":") -and $results.Port -and $results.Port -ne 80)
-            {
-                $results.Remove("Port")
-            }
-            elseif(!$results.WebAppUrl.Contains(":") -and !$results.Port)
+            if(!$results.WebAppUrl.Contains(":") -and !$results.Port)
             {
                 $results.Add("Port", 80)
             }
@@ -3442,10 +3440,7 @@ function Read-SPContentDatabase()
             $params.WebAppUrl = $spContentDB.WebApplication.Url
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-
-            Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
-            $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-
+            $results.DatabaseServer = $spContentDB.Server
             $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
             $Script:dscConfigContent += $currentBlock
