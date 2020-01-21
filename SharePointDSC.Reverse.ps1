@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.6.0.0
+.VERSION 3.6.0.1
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,13 +16,11 @@
 
 .RELEASENOTES
 
-* Fixed issue with Central admin Port retrieval;
-* Updated dependency to ReverseDSC 1.9.4.7;
-* Updated dependency to SharePointDSC 3.6.0.0;
+* Fixed issue with Central admin Url on HTTP;
 
 #>
 
-#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="1.9.4.7"},@{ModuleName="SharePointDSC";ModuleVersion="3.6.0.0"}
+#Requires -Modules @{ModuleName="ReverseDSC";ModuleVersion="2.0.0.2"},@{ModuleName="SharePointDSC";ModuleVersion="3.7.0.0"}
 
 <#
 
@@ -1119,6 +1117,10 @@ function Read-SPFarm (){
     $configDB = Get-SPDatabase | Where-Object{$_.GetType().Name -eq "SPConfigurationDatabase"}
     $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
+    if ($null -ne $results.CentralAdministrationUrl -and $results.CentralAdministrationUrl.ToLower() -like 'http://*')
+    {
+        $results.Remove("CentralAdministrationUrl") | Out-Null
+    }
     if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
     {
         if ($DynamicCompilation)
