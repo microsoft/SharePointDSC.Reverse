@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.6.0.1
+.VERSION 3.7.0.0
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -16,7 +16,7 @@
 
 .RELEASENOTES
 
-* Fixed issue with Central admin Url on HTTP;
+* Revamp with ReverseDSC v2+;
 
 #>
 
@@ -59,7 +59,7 @@ $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "3.6.0.0"
+$SPDSCVersion = "3.7.0.0"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -172,7 +172,7 @@ function Orchestrator
     {
         if ($DynamicCompilation)
         {
-            $spServers = @("localhost")
+            $spServers = @(@{Name=$env:COMPUTERNAME;Address=$env:COMPUTERNAME})
         }
         else
         {
@@ -234,7 +234,7 @@ function Orchestrator
         {
             if ($StandAlone -and $DynamicCompilation)
             {
-                Add-ConfigurationDataEntry -Node "localhost" -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
+                Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerNumber" -Value "1" -Description "Identifier for the Current Server"
             }
             elseif($Standalone)
             {
@@ -260,7 +260,7 @@ function Orchestrator
             {
                 if ($DynamicCompilation)
                 {
-                    Add-ConfigurationDataEntry -Node 'localhost' -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
+                    Add-ConfigurationDataEntry -Node $Script:currentServerName -Key "ServerRole" -Value "SingleServerFarm" -Description "MinRole for the current server;"
                 }
                 elseif($StandAlone)
                 {
@@ -899,7 +899,9 @@ function Test-Prerequisites
             Write-Host "`r`nW102"  -BackgroundColor Yellow -ForegroundColor Black -NoNewline
             Write-Host "   - We could not find the PackageManagement modules on the machine. Please make sure you download and install it at https://www.microsoft.com/en-us/download/details.aspx?id=51451 before executing this script"
         }
+
         $moduleObject = Get-DSCResource | Where-Object{$_.Module -like "SharePointDsc"} -ErrorAction SilentlyContinue
+
         if(!$moduleObject)
         {
             Write-Host "`r`nE103"  -BackgroundColor Red -ForegroundColor Black -NoNewline
@@ -1121,7 +1123,7 @@ function Read-SPFarm (){
     {
         $results.Remove("CentralAdministrationUrl") | Out-Null
     }
-    if($null -eq (Get-ConfigurationDataEntry -Key "DatabaseServer"))
+    if($null -eq (Get-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer"))
     {
         if ($DynamicCompilation)
         {
@@ -1133,7 +1135,7 @@ function Read-SPFarm (){
         }
     }
 
-    if($null -eq (Get-ConfigurationDataEntry -Key "PassPhrase"))
+    if($null -eq (Get-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase"))
     {
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "PassPhrase" -Value "pass@word1" -Description "SharePoint Farm's PassPhrase;"
     }
@@ -1166,8 +1168,11 @@ function Read-SPFarm (){
         $results.Remove("ServerRole")
     }
     $results = Repair-Credentials -results $results
-    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $results.FarmAccount = Resolve-Credentials -UserName $results.FarmAccount
+    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FarmAccount"
     if($spMajorVersion -ge 16)
     {
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServerRole"
@@ -1213,7 +1218,7 @@ function Read-SPFarm (){
                         }
 
                         $resultsFeature = Repair-Credentials -results $resultsFeature
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                        $Script:dscConfigContent += Get-DSCBlock -Params $resultsFeature -ModulePath $moduleFeature
                         $Script:dscConfigContent += "        }`r`n"
                     }
                 }
@@ -1274,12 +1279,13 @@ function Read-SPWebApplications (){
                 $results.Add("Port", 80)
             }
 
-            $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentDSCBlock = Get-DSCBlock -Params $results -ModulePath $module
             if($convertToVariable)
             {
                 $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ApplicationPoolAccount"
             }
             $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "DatabaseServer"
+            $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentDSCBlock
             $Script:dscConfigContent += "        }`r`n"
 
@@ -1324,7 +1330,9 @@ function Read-SPWebApplications (){
                                 $resultsFeature.Remove("InstalAccount")
                             }
                             $resultsFeature = Repair-Credentials -results $resultsFeature
-                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                            $currentDSCBlock = Get-DSCBlock -Params $resultsFeature -ModulePath $moduleFeature
+                            $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "PsDscRunAsCredential"
+                            $Script:dscConfigContent += $currentDSCBlock
                             $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
                             $Script:dscConfigContent += "        }`r`n"
                         }
@@ -1377,7 +1385,9 @@ function Read-SPWebApplications (){
                 {
                     $resultsEmail.ReplyToAddress = "*"
                 }
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsEmail -ModulePath $moduleEmail
+                $currentDSCBlock = Get-DSCBlock -Params $resultsEmail -ModulePath $moduleEmail                
+                $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentDSCBlock
                 $Script:dscConfigContent += "            DependsOn = `"[SPWebApplication]" + $spWebApp.Name.Replace(" ", "") + "`";`r`n"
                 $Script:dscConfigContent += "        }`r`n"
             }
@@ -1448,10 +1458,11 @@ function Read-SPServiceApplicationPools
             {
                 $results.Remove("AllowAnonymous")
             }
-            $currentDSCBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentDSCBlock = Get-DSCBlock -Params $results -ModulePath $module
             if($convertToVariable)
             {
                 $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "ServiceAccount"
+                $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "PsDscRunAsCredential"
             }
             $Script:dscConfigContent += $currentDSCBlock
 
@@ -1491,7 +1502,9 @@ function Read-SPQuotaTemplate()
             $params.Name = $quota.Name
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentDSCBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentDSCBlock = Convert-DSCStringParamToVariable -DSCBlock $currentDSCBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentDSCBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
         }
@@ -1629,7 +1642,9 @@ function Read-SPSitesAndWebs ()
                         $secondaryOwner = $results.SecondaryOwnerAlias
                     }
                 }
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+
                 if($null -ne $results.SecondaryOwnerAlias -and $results.SecondaryOwnerAlias.StartsWith("`$"))
                 {
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SecondaryOwnerAlias"
@@ -1672,7 +1687,9 @@ function Read-SPSitesAndWebs ()
                             $Script:dscConfigContent += "        SPWeb " + [System.Guid]::NewGuid().toString() + "`r`n"
                             $Script:dscConfigContent += "        {`r`n"
                             $resultsWeb = Repair-Credentials -results $resultsWeb
-                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsWeb -ModulePath $moduleWeb
+                            $currentBlock = Get-DSCBlock -Params $resultsWeb -ModulePath $moduleWeb
+                            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                            $Script:dscConfigContent += $currentBlock
                             $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
                             $Script:dscConfigContent += "        }`r`n"
 
@@ -1706,7 +1723,9 @@ function Read-SPSitesAndWebs ()
                                             $Script:dscConfigContent += "        {`r`n"
 
                                             $resultsFeature = Repair-Credentials -results $resultsFeature
-                                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                                            $currentBlock = Get-DSCBlock -Params $resultsFeature -ModulePath $moduleFeature
+                                            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                                            $Script:dscConfigContent += $currentBlock
                                             $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
                                             $Script:dscConfigContent += "        }`r`n"
                                         }
@@ -1764,7 +1783,9 @@ function Read-SPSitesAndWebs ()
                                     $resultsFeature.Remove("InstalAccount")
                                 }
                                 $resultsFeature = Repair-Credentials -results $resultsFeature
-                                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsFeature -ModulePath $moduleFeature
+                                $currentBlock = Get-DSCBlock -Params $resultsFeature -ModulePath $moduleFeature
+                                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                                $Script:dscConfigContent += $currentBlock
                                 $Script:dscConfigContent += "            DependsOn = `"[SPSite]" + $siteGuid + "`";`r`n"
                                 $Script:dscConfigContent += "        }`r`n"
                             }
@@ -1826,7 +1847,9 @@ function Read-SPManagedPaths
 
                     $results = Repair-Credentials -results $results
 
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
                 $i++
@@ -1867,7 +1890,9 @@ function Read-SPManagedPaths
                 $params.HostHeader = $true;
                 $results = Get-TargetResource @params
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             $i++
@@ -1914,8 +1939,10 @@ function Read-SPManagedAccounts()
                 Save-Credentials -UserName $managedAccount.UserName
             }
             $results.AccountName = (Resolve-Credentials -UserName $managedAccount.UserName) + ".UserName"
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Account"
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "AccountName"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -1992,7 +2019,9 @@ function Read-SPServiceInstance($Servers)
                                 $results.Add("FarmAccount", $Global:spFarmAccount)
                             }
                             $results = Repair-Credentials -results $results
-                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                            $Script:dscConfigContent += $currentBlock
                             $Script:dscConfigContent += "        }`r`n"
                         }
                     }
@@ -2008,7 +2037,7 @@ function Read-SPServiceInstance($Servers)
 
         if ($DynamicCompilation)
         {
-            Add-ConfigurationDataEntry -Node 'localhost' -Key "ServiceInstances" -Value $serviceStatuses
+            Add-ConfigurationDataEntry -Node  $env:ComputerName -Key "ServiceInstances" -Value $serviceStatuses
         }
         elseif($StandAlone)
         {
@@ -2036,8 +2065,9 @@ function Read-DiagnosticLoggingSettings()
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "LogPath" -Value $results.LogPath -Description "Path where the SharePoint ULS logs will be stored;"
     $results.LogPath = "`$ConfigurationData.NonNodeData.LogPath"
 
-    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LogPath"
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
     $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
 }
@@ -2057,7 +2087,8 @@ function Read-SPSiteURL($siteUrl)
         $params.Url = $siteUrl
         $results = Repair-Credentials -results $results
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
@@ -2088,8 +2119,9 @@ function Read-SPMachineTranslationServiceApp()
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -2153,7 +2185,10 @@ function Read-SPWebAppPolicy()
         }
 
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $DSCBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $DSCBlock = Convert-DSCStringParamToVariable -DSCBlock $DSCBlock -ParameterName "Members" -IsCIMArray $true
+        $DSCBlock = Convert-DSCStringParamToVariable -DSCBlock $DSCBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $DSCBlock
         $Script:dscConfigContent += "        }`r`n"
         $i++
     }
@@ -2192,7 +2227,8 @@ function Read-SPUsageServiceApplication()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageLogLocation" -Value $results.UsageLogLocation -Description "Path where the Usage Logs will be stored;"
         $results.UsageLogLocation = "`$ConfigurationData.NonNodeData.UsageLogLocation"
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "UsageLogLocation"
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
 
@@ -2244,7 +2280,8 @@ function Read-StateServiceApplication ($modulePath, $params)
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
                 $results = Repair-Credentials -results $results
-                $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
@@ -2294,7 +2331,9 @@ function Read-CacheAccounts ($modulePath, $params)
             $Script:dscConfigContent += "        SPCacheAccounts " + $webApp.DisplayName.Replace(" ", "") + "CacheAccounts`r`n"
             $Script:dscConfigContent += "        {`r`n"
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
         $i++
@@ -2383,10 +2422,11 @@ function Read-SPUserProfileServiceApplication ($modulePath, $params)
                     {
                         $results.PSDSCRunAsCredential = "`$Credsinstallaccount"
                     }
-                    $currentBlock += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock += Get-DSCBlock -Params $results -ModulePath $module
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SyncDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ProfileDBServer"
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "SocialDBServer"
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                     $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                     $i++
@@ -2458,8 +2498,9 @@ function Read-SecureStoreServiceApplication()
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             if($foundFailOver)
             {
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "FailOverDatabaseServer"
@@ -2516,9 +2557,10 @@ function Read-ManagedMetadataServiceApplication()
                     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                     $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-                    $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
                     $currentBlock = Set-TermStoreAdministrators $currentBlock
                     $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                     $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
@@ -2633,8 +2675,9 @@ function Read-SPWordAutomationServiceApplication()
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
@@ -2677,7 +2720,9 @@ function Read-SPVisioServiceApplication()
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             $i++
@@ -2734,7 +2779,9 @@ function Read-SPTrustedIdentityTokenIssuer()
                 $results.Remove("InstallAccount")
             }
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
         }
@@ -2769,7 +2816,9 @@ function Read-SPWorkManagementServiceApplication()
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -2819,7 +2868,9 @@ function Read-SPTimerJobState
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
                 $Script:dscConfigContent += "#>`r`n"
             }
@@ -2859,8 +2910,9 @@ function Read-SPPerformancePointServiceApplication()
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
 
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
@@ -2897,7 +2949,9 @@ function Read-SPWebAppWorkflowSettings()
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -2933,7 +2987,9 @@ function Read-SPWebAppThrottlingSettings()
                 }
                 $results.HappyHour = Get-SPWebAppHappyHour -params $results.HappyHour
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock=  Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -2968,7 +3024,9 @@ function Read-SPWebAppSiteUseAndDeletion()
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -3017,7 +3075,9 @@ function Read-SPWebApplicationExtension()
                             $results.Remove("AuthenticationProvider")
                         }
                         $results = Repair-Credentials -results $results
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                        $Script:dscConfigContent += $currentBlock
                         $Script:dscConfigContent += "        }`r`n"
                     }
                 }
@@ -3062,7 +3122,9 @@ function Read-SPWebAppPermissions()
                     $results.WebAppUrl = $wa.Url
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -3098,7 +3160,9 @@ function Read-SPWebAppProxyGroup()
                     $results.Remove("InstallAccount")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -3152,8 +3216,9 @@ function Read-BCSServiceApplication ($modulePath, $params)
 
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
@@ -3224,8 +3289,9 @@ function Read-SearchServiceApplication()
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
                 $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
 
@@ -3264,7 +3330,9 @@ function Read-SearchServiceApplication()
 
                         $resultsContentsource = Repair-Credentials -results $resultsContentSource
 
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $resultsContentSource -ModulePath $moduleContentSource
+                        $currentBlock= Get-DSCBlock -Params $resultsContentSource -ModulePath $moduleContentSource
+                        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                        $Script:dscConfigContent += $currentBlock
                         $Script:dscConfigContent += "        }`r`n"
                     }
                     $j++
@@ -3334,7 +3402,7 @@ function Get-SPServiceAppSecurityMembers($member)
 
 function Get-SPWebPolicyPermissions($params)
 {
-    $permission = "MSFT_SPWebPolicyPermissions{`r`n"
+    $permission = "MSFT_SPWebPolicyPermissions`r`n            {`r`n"
     foreach($key in $params.Keys)
     {
         try
@@ -3358,7 +3426,7 @@ function Get-SPWebPolicyPermissions($params)
             }
             elseif(!$isCredentials)
             {
-                $permission += "                " + $key + " = `"" + $params[$key] + "`"`r`n"
+                $permission += "                " + $key + " = '" + $params[$key] + "'`r`n"
             }
             else
             {
@@ -3371,7 +3439,7 @@ function Get-SPWebPolicyPermissions($params)
             $Script:ErrorLog += "$_`r`n`r`n"
         }
     }
-    $permission += "            }"
+    $permission += "            }`r`n"
     return $permission
 }
 
@@ -3445,8 +3513,9 @@ function Read-SPContentDatabase()
             Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -3486,8 +3555,9 @@ function Read-SPAccessServiceApp()
             $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
             $Script:dscConfigContent += "        SPAccessServiceApp " + $serviceName.Replace(" ", "") + "`r`n"
             $Script:dscConfigContent += "        {`r`n"
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -3524,7 +3594,8 @@ function Read-SPAccessServices2010()
 
             $Script:dscConfigContent += "        SPAccessServices2010 " + $spAccessService.Name.Replace(" ", "") + "`r`n"
             $Script:dscConfigContent += "        {`r`n"
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
             $i++
@@ -3567,7 +3638,9 @@ function Read-SPAppCatalog()
                     $params.SiteUrl = $catUrl
                     $results = Get-TargetResource @params
                     $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
             }
@@ -3593,7 +3666,9 @@ function Read-SPAppDomain()
         $Script:dscConfigContent += "        {`r`n"
         $results = Get-TargetResource @params
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -3634,7 +3709,9 @@ function Read-SPSearchFileType()
 
                     $results = Repair-Credentials -results $results
 
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
 
                     $j++
@@ -3700,7 +3777,9 @@ function Read-SPSearchIndexPartition()
 
                             $results = Repair-Credentials -results $results
 
-                            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                            $Script:dscConfigContent += $currentBlock
                             $Script:dscConfigContent += "        }`r`n"
                             $j++
                         }
@@ -3770,7 +3849,9 @@ function Read-SPSearchTopology()
 
                 $results = Repair-Credentials -results $results
 
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
                 $i++
             }
@@ -3843,7 +3924,9 @@ function Read-SPSearchResultSource()
                             }
 
                             $results = Repair-Credentials -results $results
-                            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                            $Script:dscConfigContent += $currentBlock
                             $currentContent += "        }`r`n"
                             $Script:dscConfigContent += $currentContent
                         }
@@ -3907,7 +3990,9 @@ function Read-SPSearchResultSource()
                                                     }
 
                                                     $results = Repair-Credentials -results $results
-                                                    $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                                                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                                                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                                                    $currentContent += $currentBlock
                                                     $currentContent += "        }`r`n"
                                                     $Script:dscConfigContent += $currentContent
                                                 }
@@ -3972,7 +4057,9 @@ function Read-SPSearchCrawlRule()
                         $results.Remove("AuthenticationType")
                     }
                     $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                     $j++
                 }
@@ -4026,7 +4113,9 @@ function Read-SPSearchManagedProperty()
                         $results.Remove("Aliases")
                     }
                     $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                     $j++
                 }
@@ -4060,7 +4149,9 @@ function Read-SPSearchCrawlerImpactRule()
             $params.Remove("CertificateName")
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $currentContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $currentContent += $currentBlock
             $currentContent += "        }`r`n"
             $Script:dscConfigContent += $currentContent
         }
@@ -4088,7 +4179,9 @@ function Read-SPOfficeOnlineServerBinding()
             $Script:dscConfigContent += "        {`r`n"
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
     }
@@ -4110,7 +4203,9 @@ function Read-SPIrmSettings()
 
     $results = Repair-Credentials -results $results
 
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+    $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
 }
 
@@ -4143,7 +4238,9 @@ function Read-SPHealthAnalyzerRuleState()
                 }
 
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             else
@@ -4186,8 +4283,9 @@ function Read-SPFarmSolution()
             $results["LiteralPath"] = $filePath
             $results = Repair-Credentials -results $results
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             $currentblock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "LiteralPath"
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
             $currentBlock = $currentBlock.Replace("###", "`"")
             $Script:dscConfigContent += $currentBlock
 
@@ -4241,7 +4339,8 @@ function Read-SPFarmAdministrators()
         $results.MembersToInclude = Set-SPFarmAdministrators $results.MembersToInclude
         $results.MembersToExclude = Set-SPFarmAdministrators $results.MembersToExclude
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $currentBlock = Set-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "Members"
         $currentBlock = Set-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "MembersToInclude"
         $currentBlock = Set-SPFarmAdministratorsBlock -DSCBlock $currentBlock -ParameterName "MembersToExclude"
@@ -4257,8 +4356,15 @@ function Read-SPFarmAdministrators()
 
 function Set-SPFarmAdministratorsBlock($DSCBlock, $ParameterName)
 {
-    $newLine = $ParameterName + " = @("
-    $startPosition = $DSCBlock.IndexOf($ParameterName + " = @")
+    $longestParamLength = 21 #PsDscRunAsCredential
+    $missingSpaces = $longestParamLength - $ParameterName.Length
+    $spaceContent = ""
+    for ($i = 1; $i -le $missingSpaces;  $i++)
+    {
+        $spaceContent += " "
+    }
+    $newLine = $ParameterName + $spaceContent + "= @("
+    $startPosition = $DSCBlock.IndexOf($ParameterName + $spaceContent + "= @")
     if($startPosition -ge 0)
     {
         $endPosition = $DSCBlock.IndexOf("`r`n", $startPosition)
@@ -4266,7 +4372,7 @@ function Set-SPFarmAdministratorsBlock($DSCBlock, $ParameterName)
         {
             $DSCLine = $DSCBlock.Substring($startPosition, $endPosition - $startPosition)
             $originalLine = $DSCLine
-            $DSCLine = $DSCLine.Replace($ParameterName + " = @(","").Replace(");","").Replace(" ","")
+            $DSCLine = $DSCLine.Replace($ParameterName + $spaceContent + "= @(","").Replace(");","").Replace(" ","")
             $members = $DSCLine.Split(',')
 
             foreach($member in $members)
@@ -4355,7 +4461,9 @@ function Read-SPExcelServiceApp()
                     $results.Remove("UnusedObjectAgeMax")
                 }
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock= Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -4384,7 +4492,9 @@ function Read-SPDesignerSettings($WebAppUrl, $Scope, $WebAppName)
         $Script:dscConfigContent += "        SPDesignerSettings " + $Scope + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         if($webAppName)
         {
             $Script:dscConfigContent += "            DependsOn = `"[SP" + $scope.Replace("Collection", "") + "]" + $WebAppName + "`";`r`n"
@@ -4411,7 +4521,9 @@ function Read-SPDatabaseAAG()
                 $params.AGName = $database.AvailabilityGroup
                 $results = Get-TargetResource @params
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
         }
@@ -4451,7 +4563,9 @@ function Read-SPWebApplicationAppDomain()
 
                     $results = Repair-Credentials -results $results
 
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                     
                 }
@@ -4499,7 +4613,9 @@ function Read-SPWebAppGeneralSettings()
             {
                 $results.Remove("TimeZone")
             }
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
         catch
@@ -4529,7 +4645,9 @@ function Read-SPWebAppBlockedFileTypes()
             $results = Get-TargetResource @params
 
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
         catch
@@ -4563,7 +4681,7 @@ function Read-SPFarmPropertyBag()
                 $results.Value = (Resolve-Credentials -UserName $results.Value) + ".UserName"
             }
 
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
             if ($accountName)
             {
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Value"
@@ -4571,8 +4689,9 @@ function Read-SPFarmPropertyBag()
         }
         else
         {
-            $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
         }
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
@@ -4595,7 +4714,9 @@ function Read-SPUserProfileServiceAppPermissions()
             $results = Get-TargetResource @params
 
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
         catch
@@ -4648,7 +4769,9 @@ function Read-SPUserProfileSyncConnection()
                             $results.Remove("UseDisabledFilter")
                         }
                         $results.ConnectionCredentials = "`$Credsinstallaccount"
-                        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                        $Script:dscConfigContent += $currentBlock
                         $Script:dscConfigContent += "        }`r`n"
                     }
                 }
@@ -4732,7 +4855,9 @@ function Read-SPUserProfileProperty()
                     }
 
                     $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
                 catch
@@ -4774,7 +4899,9 @@ function Read-SPUserProfileSection()
                 $results = Get-TargetResource @params
 
                 $results = Repair-Credentials -results $results
-                $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
             }
             catch
@@ -4817,7 +4944,8 @@ function Read-SPBlobCacheSettings()
                 Add-ConfigurationDataEntry -Node "NonNodeData" -Key "BlobCacheLocation" -Value $results.Location -Description "Path where the Blob Cache objects will be stored on the servers;"
                 $results.Location = "`$ConfigurationData.NonNodeData.BlobCacheLocation"
 
-                $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
                 $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "Location"
                 $Script:dscConfigContent += $currentBlock
                 $Script:dscConfigContent += "        }`r`n"
@@ -4857,7 +4985,9 @@ function Read-SPSubscriptionSettingsServiceApp()
         }
 
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -4884,7 +5014,8 @@ function Read-SPAppManagementServiceApp()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "DatabaseServer" -Value $results.DatabaseServer -Description "Name of the Database Server associated with the destination SharePoint Farm;"
         $results.DatabaseServer = "`$ConfigurationData.NonNodeData.DatabaseServer"
 
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "DatabaseServer"
         $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
@@ -4910,7 +5041,9 @@ function Read-SPAppStoreSettings()
             $params.WebAppUrl = $webApp.Url
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
         catch
@@ -4930,7 +5063,9 @@ function Read-SPAntivirusSettings()
     $Script:dscConfigContent += "        {`r`n"
     $results = Get-TargetResource @params
     $results = Repair-Credentials -results $results
-    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+    $Script:dscConfigContent += $currentBlock
     $Script:dscConfigContent += "        }`r`n"
 }
 
@@ -4955,7 +5090,8 @@ function Read-SPDistributedCacheService()
             $convertToVariable = $true
             $results.ServiceAccount = (Resolve-Credentials -UserName $results.ServiceAccount) + ".UserName"
         }
-        $currentBlock = Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         if($convertToVariable)
         {
             $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "ServiceAccount"
@@ -4982,7 +5118,9 @@ function Read-SPSessionStateService()
         <# WA - Bug in the Get-TargetResource in SPDSC 1.7.0.0 not returning the proper set of values #>
         $results.DatabaseName = $svc.CatalogName
         $results.DatabaseServer = $svc.ServerName
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -5001,7 +5139,9 @@ function Read-SPPasswordChangeSettings
         $Script:dscConfigContent += "        SPPasswordChangeSettings " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -5053,7 +5193,9 @@ function Read-SPServiceAppSecurity()
                     $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $results.Members = "`$members"
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
             }
@@ -5089,7 +5231,9 @@ function Read-SPServiceAppSecurity()
                     $Script:dscConfigContent += "        SPServiceAppSecurity " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $results.Members = "`$members"
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
             }
@@ -5116,7 +5260,9 @@ function Read-SPPublishServiceApplication()
         $Script:dscConfigContent += "        SPPublishServiceApplication " + [System.Guid]::NewGuid().ToString() + "`r`n"
         $Script:dscConfigContent += "        {`r`n"
         $results = Repair-Credentials -results $results
-        $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+        $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+        $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+        $Script:dscConfigContent += $currentBlock
         $Script:dscConfigContent += "        }`r`n"
     }
 }
@@ -5143,7 +5289,9 @@ function Read-SPRemoteFarmTrust()
                     $Script:dscConfigContent += "        SPRemoteFarmTrust " + [System.Guid]::NewGuid().ToString() + "`r`n"
                     $Script:dscConfigContent += "        {`r`n"
                     $results = Repair-Credentials -results $results
-                    $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+                    $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+                    $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+                    $Script:dscConfigContent += $currentBlock
                     $Script:dscConfigContent += "        }`r`n"
                 }
             }
@@ -5171,7 +5319,9 @@ function Read-SPAlternateUrl()
             $params.Url = $alternateUrl.IncomingUrl
             $results = Get-TargetResource @params
             $results = Repair-Credentials -results $results
-            $Script:dscConfigContent += Get-DSCBlock -UseGetTargetResource -Params $results -ModulePath $module
+            $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
+            $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
+            $Script:dscConfigContent += $currentBlock
             $Script:dscConfigContent += "        }`r`n"
         }
     }
