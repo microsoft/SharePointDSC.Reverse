@@ -1,6 +1,6 @@
 <#PSScriptInfo
 
-.VERSION 3.7.0.0
+.VERSION 3.7.0.1
 
 .GUID b4e8f9aa-1433-4d8b-8aea-8681fbdfde8c
 
@@ -59,7 +59,7 @@ $Script:ErrorLog = ""
 $Script:configName = ""
 $Script:currentServerName = ""
 $SPDSCSource = "$env:ProgramFiles\WindowsPowerShell\Modules\SharePointDSC\"
-$SPDSCVersion = "3.7.0.0"
+$SPDSCVersion = "3.7.0.1"
 $Script:spCentralAdmin = ""
 $Script:ExtractionModeValue = "2"
 $script:SkipSitesAndWebs = $SkipSitesAndWebs
@@ -1034,8 +1034,17 @@ function Read-SPInstall
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstall BinaryInstallation" + "`r`n            {`r`n"
+
+    if ([System.String]::IsNullOrEmpty($BinaryLocation))
+    {
+        $BinaryLocation = "\\<location>"
+    }
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPInstallationBinaryPath" -Value $BinaryLocation -Description "Location of the SharePoint Binaries (local path or network share);"
     $Script:dscConfigContent += "                BinaryDir = `$ConfigurationData.NonNodeData.SPInstallationBinaryPath;`r`n"
+    if ([System.String]::IsNullOrEmpty($ProductKey))
+    {
+        $ProductKey = "xxxxx-xxxxx-xxxxx-xxxxx"
+    }
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPProductKey" -Value $ProductKey -Description "SharePoint Product Key"
     $Script:dscConfigContent += "                ProductKey = `$ConfigurationData.NonNodeData.SPProductKey;`r`n"
     $Script:dscConfigContent += "                Ensure = `"Present`";`r`n"
@@ -1063,6 +1072,10 @@ function Read-SPInstallPrereqs
     $Script:dscConfigContent += "        if(`$ConfigurationData.NonNodeData.FullInstallation)`r`n"
     $Script:dscConfigContent += "        {`r`n"
     $Script:dscConfigContent += "            SPInstallPrereqs PrerequisitesInstallation" + "`r`n            {`r`n"
+    if ([System.String]::IsNullOrEmpty($BinaryLocation))
+    {
+        $BinaryLocation = "\\<location>"
+    }
     Add-ConfigurationDataEntry -Node "NonNodeData" -Key "SPPrereqsInstallerPath" -Value $BinaryLocation -Description "Location of the SharePoint Prerequisites Installer .exe (Local path or Network Share);"
     $Script:dscConfigContent += "                InstallerPath = `$ConfigurationData.NonNodeData.SPPrereqsInstallerPath;`r`n"
     $Script:dscConfigContent += "                OnlineMode = `$True;`r`n"
@@ -2043,7 +2056,7 @@ function Read-SPServiceInstance($Servers)
         {
             Add-ConfigurationDataEntry -Node $env:ComputerName -Key "ServiceInstances" -Value $serviceStatuses
         }
-        else
+        elseif ($servicesStatuses.Length -gt 0)
         {
             Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
         }
