@@ -2240,6 +2240,7 @@ function Read-SPUsageServiceApplication()
         Add-ConfigurationDataEntry -Node "NonNodeData" -Key "UsageLogLocation" -Value $results.UsageLogLocation -Description "Path where the Usage Logs will be stored;"
         $results.UsageLogLocation = "`$ConfigurationData.NonNodeData.UsageLogLocation"
 
+        $results.DatabaseCredentials =  "`$CredsAdministrator"
         $currentBlock = Get-DSCBlock -Params $results -ModulePath $module
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "PsDscRunAsCredential"
         $currentBlock = Convert-DSCStringParamToVariable -DSCBlock $currentBlock -ParameterName "UsageLogLocation"
