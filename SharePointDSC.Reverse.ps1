@@ -2056,7 +2056,7 @@ function Read-SPServiceInstance($Servers)
         {
             Add-ConfigurationDataEntry -Node $env:ComputerName -Key "ServiceInstances" -Value $serviceStatuses
         }
-        elseif ($servicesStatuses.Length -gt 0)
+        elseif ($serviceStatuses.Length -gt 0)
         {
             Add-ConfigurationDataEntry -Node $Server -Key "ServiceInstances" -Value $serviceStatuses
         }
